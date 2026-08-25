@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launch theme only has to hand off to Compose without a flash of the
+         wrong colour, so it carries the same Background as the app itself.
+         DayNight is deliberately not used: there is one scheme (see Theme.kt). -->
+    <style name="Theme.DmnAdmin" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

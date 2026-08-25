@@ -1,0 +1,18 @@
+# Secrets — Supabase URL and publishable key live here. Never committed.
+local.properties
+
+*.iml
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties.bak
+
+# Android Studio / IntelliJ
+.idea/
+*.hprof
+
+# Keystores
+*.jks
+*.keystore

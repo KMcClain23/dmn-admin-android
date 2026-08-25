@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors ui/theme/Color.kt Background. Needed in XML because the window
+         background is painted before Compose starts. -->
+    <color name="background">#FF0F1420</color>
+</resources>
