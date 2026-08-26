@@ -20,6 +20,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -85,10 +88,15 @@ fun BoardScreen(
     onMoveTo: (String, String) -> Unit,
     onArchive: (String, ArchiveReason, String) -> Unit,
     onSignOut: () -> Unit,
+    // Hoisted so a trip to the Agenda and back returns to the same tab, scrolled
+    // where it was. Remembered inside this composable they would reset on every
+    // destination switch, which reads as the board having reloaded.
+    pagerState: PagerState = rememberPagerState(pageCount = { 2 }),
+    pipelineScroll: LazyListState = rememberLazyListState(),
+    productionScroll: LazyListState = rememberLazyListState(),
 ) {
     val c = DmnTheme.colors
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(pageCount = { 2 })
     var menuOpen by remember { mutableStateOf(false) }
 
     // Which card a gesture is currently about. One at a time by construction:
@@ -216,6 +224,7 @@ fun BoardScreen(
                     }
                     SectionList(
                         sections = sections,
+                        listState = if (page == 0) pipelineScroll else productionScroll,
                         state = state,
                         onOpenCard = onOpenCard,
                         onToggleFirst15 = onToggleFirst15,
@@ -264,6 +273,7 @@ private fun DueChip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun SectionList(
     sections: List<Pair<String, List<BoardCard>>>,
+    listState: LazyListState,
     state: BoardUiState,
     onOpenCard: (BoardCard) -> Unit,
     onToggleFirst15: (String) -> Unit,
@@ -272,6 +282,7 @@ private fun SectionList(
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

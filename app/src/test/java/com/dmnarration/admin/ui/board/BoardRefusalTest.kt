@@ -63,6 +63,9 @@ class BoardRefusalTest {
 
         override suspend fun updateCard(cardId: String, patch: JsonObject) =
             Result.success<BoardCard?>(null)
+
+        override suspend fun cardDetail(cardId: String) =
+            Result.success<com.dmnarration.admin.domain.CardDetail?>(null)
     }
 
     private class FakeStudio : StudioSettingsRepository {

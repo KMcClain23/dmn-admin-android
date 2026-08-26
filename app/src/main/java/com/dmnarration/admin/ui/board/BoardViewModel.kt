@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.dmnarration.admin.data.BoardAccessNotEnabledException
 import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.data.StudioSettingsRepository
+import com.dmnarration.admin.domain.Agenda
+import com.dmnarration.admin.domain.buildAgenda
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.Capabilities
 import com.dmnarration.admin.domain.DEFAULT_STUDIO_SETTINGS
@@ -67,6 +69,23 @@ data class BoardUiState(
      * the zero describes the viewport rather than their work.
      */
     val refused: Boolean = false,
+    /**
+     * Today's agenda, derived from the very same cards the board renders.
+     *
+     * Deliberately not a second fetch: every field an agenda needs is already in
+     * board_for_session()'s eighteen columns, and a second query would be a second
+     * thing that can disagree with the first. It is computed from `allCards` rather
+     * than the filtered projection, because the due-soon chips are a board filter and
+     * have no business narrowing what today asks of you.
+     */
+    val agenda: Agenda = Agenda(
+        today = currentDay(),
+        recordingToday = emptyList(),
+        dueSoon = emptyList(),
+        late = emptyList(),
+        weekHours = 0.0,
+        monthHours = 0.0,
+    ),
 ) {
     val isEmpty: Boolean get() = pipelineCount == 0 && productionCount == 0
 }
@@ -315,9 +334,8 @@ class BoardViewModel @Inject constructor(
         val filter = _state.value.dateFilter
         // archivedAt is the optimistic archive leaving the board. It stays in
         // allCards so a refusal or a timeout can put it back verbatim.
-        val visible = allCards
-            .filter { it.archivedAt == null }
-            .filter(::isActive)
+        val live = allCards.filter { it.archivedAt == null }
+        val visible = live.filter(::isActive)
             .filter { passesDateFilter(it, filter, today) }
         val pipelineCards = visible.filter(::isPipeline)
         val productionCards = visible.filter(::isProduction)
@@ -328,6 +346,9 @@ class BoardViewModel @Inject constructor(
             production = bucketProduction(productionCards),
             pipelineCount = pipelineCards.size,
             productionCount = productionCards.size,
+            // From `live`, not `visible`: the due-soon chips filter the board, and
+            // a board filter has no business narrowing what today asks of you.
+            agenda = buildAgenda(live, _state.value.settings, today),
         )
     }
 

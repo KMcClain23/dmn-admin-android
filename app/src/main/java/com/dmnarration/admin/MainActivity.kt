@@ -1,5 +1,16 @@
 package com.dmnarration.admin
 
+import androidx.activity.compose.BackHandler
+import com.dmnarration.admin.ui.detail.CardDetailScreen
+import com.dmnarration.admin.ui.detail.CardDetailViewModel
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.dmnarration.admin.ui.agenda.AgendaScreen
+import com.dmnarration.admin.ui.theme.SurfaceRaised
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -148,6 +159,9 @@ private fun AppRoot(modifier: Modifier = Modifier) {
     }
 }
 
+/** The two destinations. Board is the app's home; Today is what it asks of you. */
+private enum class Destination(val label: String) { TODAY("Today"), BOARD("Board") }
+
 @Composable
 private fun BoardRoute(
     role: com.dmnarration.admin.domain.UserRole,
@@ -156,28 +170,80 @@ private fun BoardRoute(
     val vm: BoardViewModel = hiltViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<BoardCard?>(null) }
+    var where by rememberSaveable { mutableStateOf(Destination.BOARD) }
+
+    // Hoisted here rather than inside BoardScreen so switching to Today and back
+    // returns to the same tab, scrolled where it was.
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val pipelineScroll = rememberLazyListState()
+    val productionScroll = rememberLazyListState()
 
     LaunchedEffect(role) { vm.start(role) }
 
-    BoardScreen(
-        state = state,
-        onRefresh = vm::refresh,
-        onToggleFilter = vm::setDateFilter,
-        onOpenCard = { selected = it },
-        onToggleFirst15 = vm::toggleFirst15,
-        onMoveTo = vm::moveTo,
-        onArchive = { id, reason, notes -> vm.archive(id, reason.stored, notes) },
-        onSignOut = onSignOut,
-    )
+    Column(Modifier.fillMaxSize().background(Background)) {
+        Box(Modifier.weight(1f)) {
+            when (where) {
+                Destination.BOARD -> BoardScreen(
+                    state = state,
+                    onRefresh = vm::refresh,
+                    onToggleFilter = vm::setDateFilter,
+                    onOpenCard = { selected = it },
+                    onToggleFirst15 = vm::toggleFirst15,
+                    onMoveTo = vm::moveTo,
+                    onArchive = { id, reason, notes -> vm.archive(id, reason.stored, notes) },
+                    onSignOut = onSignOut,
+                    pagerState = pagerState,
+                    pipelineScroll = pipelineScroll,
+                    productionScroll = productionScroll,
+                )
 
+                Destination.TODAY -> AgendaScreen(
+                    agenda = state.agenda,
+                    refreshing = state.refreshing,
+                    // The refused message belongs on both screens: the agenda is the
+                    // same data, so a session that may not read the board may not
+                    // read today either.
+                    error = state.error,
+                    onRefresh = vm::refresh,
+                    onOpenCard = { selected = it },
+                )
+            }
+        }
+
+        NavigationBar(containerColor = com.dmnarration.admin.ui.theme.Surface) {
+            for (d in Destination.entries) {
+                NavigationBarItem(
+                    selected = where == d,
+                    onClick = { where = d },
+                    icon = {},
+                    label = { Text(d.label, style = DmnType.BodyMedium) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedTextColor = DmnTheme.colors.accentAmber,
+                        unselectedTextColor = DmnTheme.colors.textMuted,
+                        indicatorColor = SurfaceRaised,
+                    ),
+                )
+            }
+        }
+    }
+
+    // Layered over the board rather than replacing it, so back returns to the same
+    // tab scrolled where it was — by construction rather than by restoring anything.
     selected?.let { card ->
-        CardDetailSheet(
-            card = card,
-            capabilities = state.capabilities,
-            settings = state.settings,
-            today = state.today,
-            onDismiss = { selected = null },
-        )
+        val detailVm: CardDetailViewModel = hiltViewModel(key = card.id)
+        val detailState by detailVm.state.collectAsStateWithLifecycle()
+        LaunchedEffect(card.id) { detailVm.start(card.id) }
+
+        BackHandler { selected = null }
+
+        Box(Modifier.fillMaxSize().background(Background)) {
+            CardDetailScreen(
+                state = detailState,
+                capabilities = state.capabilities,
+                onBack = { selected = null },
+                onRefresh = detailVm::refresh,
+            )
+        }
     }
 }
 

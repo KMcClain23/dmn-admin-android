@@ -7,6 +7,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.dmnarration.admin.ui.theme.DmnTheme
@@ -37,6 +40,12 @@ fun DmnTextField(
     singleLine: Boolean = true,
     enabled: Boolean = true,
     textStyle: TextStyle = DmnType.Body,
+    // Carried so the sign-in screen can adopt this without losing its keyboard
+    // behaviour. Swapping the control was described as a one-line change; it is not,
+    // because dropping visualTransformation would print a password in clear text.
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     val c = DmnTheme.colors
     OutlinedTextField(
@@ -45,6 +54,9 @@ fun DmnTextField(
         modifier = modifier,
         enabled = enabled,
         singleLine = singleLine,
+        visualTransformation = visualTransformation,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
         textStyle = textStyle.copy(color = c.textPrimary),
         shape = RoundedCornerShape(8.dp),
         label = label?.let { { Text(it, style = DmnType.Small, color = c.textMuted) } },

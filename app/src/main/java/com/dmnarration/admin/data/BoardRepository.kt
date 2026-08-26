@@ -1,5 +1,8 @@
 package com.dmnarration.admin.data
 
+import com.dmnarration.admin.domain.CardDetail
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.SettingKeys
 import com.dmnarration.admin.domain.StudioSettings
@@ -24,6 +27,10 @@ import javax.inject.Singleton
 class BoardAccessNotEnabledException :
     Exception("the signed-in account may not read the board")
 
+/** The card read equivalent, raised by `card_detail()`. */
+class CardAccessNotEnabledException :
+    Exception("the signed-in account may not read this card")
+
 /**
  * The board read and the one write Stage 2 performs.
  *
@@ -34,6 +41,16 @@ class BoardAccessNotEnabledException :
 interface BoardRepository {
     suspend fun loadBoard(): Result<List<BoardCard>>
     suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?>
+
+    /**
+     * One card in full. Null means the id matched nothing.
+     *
+     * A refusal is [CardAccessNotEnabledException], never null, because a card that
+     * was archived, a card that never existed and a role that was revoked would
+     * otherwise all arrive as the same empty answer — the ambiguity Stage 2's bug 5
+     * was made of.
+     */
+    suspend fun cardDetail(cardId: String): Result<CardDetail?>
 }
 
 /**
@@ -113,8 +130,20 @@ class SupabaseBoardRepository @Inject constructor(
                 ?.toDomain()
         }
 
+    override suspend fun cardDetail(cardId: String): Result<CardDetail?> = runCatching {
+        try {
+            client.postgrest.rpc(CARD_RPC, buildJsonObject { put("p_id", cardId) })
+                .decodeList<CardDetailDto>()
+                .firstOrNull()
+                ?.toDomain()
+        } catch (t: Throwable) {
+            if (t.isCardAccessRefusal()) throw CardAccessNotEnabledException() else throw t
+        }
+    }
+
     private companion object {
         const val BOARD_RPC = "board_for_session"
+        const val CARD_RPC = "card_detail"
 
         /** The write's return shape. The read's list lives in the RPC signature. */
         const val ADMIN_COLUMNS =
@@ -141,6 +170,18 @@ internal fun Throwable.isBoardAccessRefusal(): Boolean {
 }
 
 internal const val BOARD_ACCESS_MARKER = "BOARD_ACCESS_NOT_ENABLED"
+
+internal const val CARD_ACCESS_MARKER = "CARD_ACCESS_NOT_ENABLED"
+
+/** The same cause-chain walk, for the card read's marker. */
+internal fun Throwable.isCardAccessRefusal(): Boolean {
+    var t: Throwable? = this
+    while (t != null) {
+        if (t.message?.contains(CARD_ACCESS_MARKER) == true) return true
+        t = t.cause
+    }
+    return false
+}
 
 /**
  * The five tunable numbers.

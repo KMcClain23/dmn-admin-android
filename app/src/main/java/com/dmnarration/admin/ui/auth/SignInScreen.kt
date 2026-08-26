@@ -11,7 +11,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +24,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dmnarration.admin.ui.theme.DmnType
+import com.dmnarration.admin.ui.components.DmnTextField
 import com.dmnarration.admin.ui.theme.DmnTheme
 
 @Composable
@@ -53,10 +53,10 @@ fun SignInScreen(
             modifier = Modifier.padding(top = 6.dp, bottom = 24.dp),
         )
 
-        OutlinedTextField(
+        DmnTextField(
             value = email,
             onValueChange = { email = it },
-            label = { Text("Email") },
+            label = "Email",
             singleLine = true,
             enabled = !signingIn,
             keyboardOptions = KeyboardOptions(
@@ -66,10 +66,10 @@ fun SignInScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        OutlinedTextField(
+        DmnTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("Password") },
+            label = "Password",
             singleLine = true,
             enabled = !signingIn,
             visualTransformation = PasswordVisualTransformation(),
