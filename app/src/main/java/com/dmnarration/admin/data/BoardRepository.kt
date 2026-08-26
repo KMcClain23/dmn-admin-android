@@ -8,6 +8,7 @@ import com.dmnarration.admin.domain.studioSettingsFrom
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
+import kotlinx.serialization.json.JsonObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -79,6 +80,40 @@ class BoardRepository @Inject constructor(
             }
             .decodeList<BoardCardDto>()
             .map { it.toDomain() }
+    }
+
+    /**
+     * Update one card and report what actually happened to it.
+     *
+     * `Result<BoardCard?>` with three meanings, and the middle one is why this
+     * does not return a plain Result<Unit>:
+     *
+     *   success(row)  — the server returned the row. Its copy is the truth; a
+     *                   trigger may have stamped released_at or moved
+     *                   updated_at, neither of which the app computes.
+     *   success(null) — zero rows. RLS refused this row. PostgREST answers 200
+     *                   with an empty array, so this arrives wearing success
+     *                   and nothing is thrown.
+     *   failure(t)    — the request failed: no network, or permission denied on
+     *                   an ungranted column.
+     *
+     * `select()` in the request is what makes PostgREST return the affected
+     * rows at all. Without it the call succeeds silently and a refusal is
+     * indistinguishable from a save — which is the whole failure this shape
+     * exists to make impossible to write by accident.
+     *
+     * Nothing here sets updated_at or released_at. Those are triggers now; if
+     * that rule ever needs writing in Kotlin, the migration is wrong.
+     */
+    suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?> = runCatching {
+        client.from("board_cards")
+            .update(patch) {
+                select(Columns.raw(ADMIN_COLUMNS))
+                filter { eq("id", cardId) }
+            }
+            .decodeList<BoardCardDto>()
+            .firstOrNull()
+            ?.toDomain()
     }
 
     private companion object {
