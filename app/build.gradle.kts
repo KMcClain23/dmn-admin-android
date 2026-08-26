@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.PathSensitivity
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -76,6 +77,16 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
+}
+
+// CredentialDestructionGuardTest reads main sources from disk at run time, which
+// Gradle cannot see as an input — so a change that breaks the guard left the test
+// task up to date and the guard silently did not run. Declaring the directory
+// makes a source change re-run the tests that police it.
+tasks.withType<Test>().configureEach {
+    inputs.dir("src/main/java")
+        .withPropertyName("guardedSources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 dependencies {
