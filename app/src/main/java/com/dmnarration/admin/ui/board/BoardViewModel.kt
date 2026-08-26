@@ -52,6 +52,18 @@ data class BoardUiState(
     val production: Map<ProductionSubgroup, List<BoardCard>> = emptyMap(),
     val pipelineCount: Int = 0,
     val productionCount: Int = 0,
+    /**
+     * The server has said this session may not read the board.
+     *
+     * Distinct from `error != null`, which also covers a timeout. In this state
+     * the screen shows the message and nothing else: no counts, no filter
+     * chips, no tabs. "Pipeline (0)" is honest about the viewport and answers a
+     * question nobody asked — it implies there IS a pipeline that happens to be
+     * empty, which is the exact ambiguity bug 6 was made of, and the person
+     * seeing it will be an editor on every launch until F3 with no way to know
+     * the zero describes the viewport rather than their work.
+     */
+    val refused: Boolean = false,
 ) {
     val isEmpty: Boolean get() = pipelineCount == 0 && productionCount == 0
 }
@@ -134,6 +146,7 @@ class BoardViewModel @Inject constructor(
                         loading = false,
                         refreshing = false,
                         error = null,
+                        refused = false,
                         settings = settings,
                         // Restores what a refusal withdrew. Only an admin gets
                         // rows out of board_for_session(), so a successful read
@@ -171,6 +184,7 @@ class BoardViewModel @Inject constructor(
                         refreshing = false,
                         settings = settings,
                         error = describe(t),
+                        refused = refused,
                         capabilities = if (refused) {
                             Capabilities.of(UserRole.UNKNOWN)
                         } else {

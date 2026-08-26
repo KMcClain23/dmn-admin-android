@@ -112,24 +112,30 @@ fun BoardScreen(
         // they existed only because both sections shared one scroll. The tabs
         // do that job now. The due-soon chips remain, and still toggle off when
         // tapped again.
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            DueChip("Due this week", state.dateFilter == DateFilter.WEEK) { onToggleFilter(DateFilter.WEEK) }
-            DueChip("Due this month", state.dateFilter == DateFilter.MONTH) { onToggleFilter(DateFilter.MONTH) }
-        }
-
-        PrimaryTabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = Background,
-            contentColor = c.accentAmber,
-        ) {
-            TabWithCount("Pipeline", state.pipelineCount, pagerState.currentPage == 0) {
-                scope.launch { pagerState.animateScrollToPage(0) }
+        // Withheld entirely when the board is refused. A count of zero beside a
+        // refusal implies there is a pipeline and it happens to be empty, and
+        // "Due this week" is a filter over nothing. This is the one state where
+        // less chrome is more truthful — the message is the whole answer.
+        if (!state.refused) {
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DueChip("Due this week", state.dateFilter == DateFilter.WEEK) { onToggleFilter(DateFilter.WEEK) }
+                DueChip("Due this month", state.dateFilter == DateFilter.MONTH) { onToggleFilter(DateFilter.MONTH) }
             }
-            TabWithCount("In Production", state.productionCount, pagerState.currentPage == 1) {
-                scope.launch { pagerState.animateScrollToPage(1) }
+
+            PrimaryTabRow(
+                selectedTabIndex = pagerState.currentPage,
+                containerColor = Background,
+                contentColor = c.accentAmber,
+            ) {
+                TabWithCount("Pipeline", state.pipelineCount, pagerState.currentPage == 0) {
+                    scope.launch { pagerState.animateScrollToPage(0) }
+                }
+                TabWithCount("In Production", state.productionCount, pagerState.currentPage == 1) {
+                    scope.launch { pagerState.animateScrollToPage(1) }
+                }
             }
         }
 

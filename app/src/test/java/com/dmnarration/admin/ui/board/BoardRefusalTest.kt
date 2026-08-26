@@ -256,4 +256,35 @@ class BoardRefusalTest {
         )
     }
 
+
+    /**
+     * The flag that strips the chrome. Distinct from `error != null` on purpose:
+     * a timeout must keep the counts and chips, because there really is a
+     * pipeline and the app simply does not know it right now.
+     */
+    @Test
+    fun `only a refusal strips the counts and chips`() = runTest(dispatcher) {
+        val board = FakeBoard { Result.success(cards) }
+        val vm = viewModel(board)
+        vm.start(UserRole.ADMIN)
+        advanceUntilIdle()
+        assertFalse("a loaded board keeps its chrome", vm.state.value.refused)
+
+        board.result = { Result.failure(java.io.IOException("Unable to resolve host")) }
+        vm.refresh()
+        advanceUntilIdle()
+        assertNotNull("precondition: this is an error state", vm.state.value.error)
+        assertFalse("a timeout is not a refusal — the counts still mean something", vm.state.value.refused)
+
+        board.result = { Result.failure(BoardAccessNotEnabledException()) }
+        vm.refresh()
+        advanceUntilIdle()
+        assertTrue("a zero beside a refusal is the ambiguity bug 6 was made of", vm.state.value.refused)
+
+        board.result = { Result.success(cards) }
+        vm.refresh()
+        advanceUntilIdle()
+        assertFalse("and it clears when the board comes back", vm.state.value.refused)
+    }
+
 }
