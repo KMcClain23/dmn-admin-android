@@ -86,6 +86,16 @@ class EncryptedSessionManager(
         }
     }
 
+    /**
+     * Whether anything is stored, without decoding it.
+     *
+     * Used to tell a fresh install from a session that exists but cannot
+     * currently be validated — the difference between "sign in" and "you are
+     * signed in, the network is down".
+     */
+    fun hasStoredSession(): Boolean =
+        runCatching { prefs?.contains(KEY_SESSION) == true }.getOrDefault(false)
+
     override suspend fun deleteSession() {
         val store = prefs ?: return
         runCatching { store.edit().remove(KEY_SESSION).apply() }

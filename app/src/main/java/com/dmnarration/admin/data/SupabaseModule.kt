@@ -20,7 +20,12 @@ object SupabaseModule {
 
     @Provides
     @Singleton
-    fun provideSupabaseClient(@ApplicationContext context: Context): SupabaseClient {
+    fun provideSessionManager(@ApplicationContext context: Context): EncryptedSessionManager =
+        EncryptedSessionManager(context)
+
+    @Provides
+    @Singleton
+    fun provideSupabaseClient(sessionStore: EncryptedSessionManager): SupabaseClient {
         // Checked here rather than at configuration time so a fresh clone with
         // no local.properties still builds, and says something useful when it
         // runs instead of failing with an empty-URL parse error.
@@ -40,7 +45,7 @@ object SupabaseModule {
             requestTimeout = 10.seconds
 
             install(Auth) {
-                sessionManager = EncryptedSessionManager(context)
+                sessionManager = sessionStore
                 alwaysAutoRefresh = true
                 autoLoadFromStorage = true
             }

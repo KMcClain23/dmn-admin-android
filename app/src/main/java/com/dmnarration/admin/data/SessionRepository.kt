@@ -8,70 +8,105 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 /**
- * The profile row is absent or unusable — a fact about this account.
+ * The profile row is missing, or its role is a string this build does not know.
  *
- * Deliberately its own type so it can be told apart from a request that never
- * arrived. "There is no row for you" and "I could not reach the server to ask"
- * are opposite situations: the first means the session's permissions are
- * genuinely unknowable and it must not be used, the second means nothing at all
- * about permissions and must not cost anyone their session.
+ * A fact about the account, and the only thing this type may mean. It
+ * deliberately does NOT cover "there is no signed-in user right now" — that is
+ * a statement about authentication, not entitlement, and conflating the two is
+ * what let a dropped network destroy a session.
  */
 class ProfileUnusableException(message: String) : Exception(message)
 
-/** What the app knows about who is signed in. */
-sealed interface AuthState {
-    data object Loading : AuthState
-    data object SignedOut : AuthState
-    data class SignedIn(val role: UserRole, val email: String?) : AuthState
-    /** Signed in, but the role could not be established. Fails closed. */
-    data class RoleUnavailable(val reason: String) : AuthState
+/** What a session status means, once interpreted. */
+sealed interface SessionState {
+    /** Authenticated, with a user to look up. */
+    data class Ready(val userId: String, val email: String?) : SessionState
+
+    /** Genuinely signed out: deliberate, revoked, or never signed in here. */
+    data object NeedsSignIn : SessionState
+
     /**
-     * Signed in, session intact, but the role could not be fetched — almost
-     * always the network. Retryable, and explicitly NOT a sign-out: being on a
-     * train must not cost you your credentials.
+     * There is a session; it just cannot be validated right now. Retryable, and
+     * never a reason to touch what is stored.
      */
-    data class RoleCheckFailed(val reason: String) : AuthState
+    data class Unreachable(val message: String) : SessionState
 }
 
 /**
  * Sign-in, sign-out, and the role that governs everything else.
  *
- * The role is fetched from `profiles` on every cold start rather than cached
- * across launches. Stage 0 proved it is read fresh from the table on every
- * query rather than baked into the JWT — demoting a user made an already-issued
- * token return zero rows with no re-authentication — so a stale cached role
- * would be a client-side lie about a server-side fact.
+ * ─── the rule this file exists to enforce ───────────────────────────────────
  *
- * A profile that cannot be read signs the user out. Proceeding with a session
- * whose permissions are unknown is the one outcome worse than an error message:
- * it produces a UI that is guessing.
+ * CREDENTIAL DESTRUCTION IS REACHABLE ONLY FROM AN EXPLICIT USER ACTION.
+ *
+ * `signOutByUser()` is the single function in the app that clears stored
+ * credentials, and the Sign out button is the only thing that calls it. No
+ * automatic path — session restore, role loading, refresh failure, or anything
+ * added later — may destroy a credential. The worst an automatic path may do is
+ * refuse to show data.
+ *
+ * Three separate bugs in this stage were the same shape: an automatic path
+ * deciding, on incomplete information, to throw away a working session. Getting
+ * the classification right a fourth time would not prevent a fifth. Making the
+ * destructive call unreachable does — a future misclassification now costs a
+ * wrong screen instead of a lost session.
  */
 @Singleton
 class SessionRepository @Inject constructor(
     private val client: SupabaseClient,
+    private val sessionStore: EncryptedSessionManager,
 ) {
 
     /**
-     * Waits for supabase-kt to finish restoring any stored session, but not
-     * forever.
+     * The library's status, observed continuously rather than sampled once.
      *
-     * Offline the restore retries its token refresh, and the status can sit at
-     * Initializing for half a minute. Null here means "it did not settle in
-     * time", which is a network answer, not an authentication one — the caller
-     * routes it to the same retryable state a failed role fetch produces.
+     * Sampling at launch was why a token expiring under a running app went
+     * unnoticed, and why recovery needed a restart: supabase-kt retries a failed
+     * refresh on its own, and nothing was listening for it to succeed.
      */
-    suspend fun awaitInitialised(timeout: Duration = 10.seconds): SessionStatus? =
-        withTimeoutOrNull(timeout) {
-            client.auth.sessionStatus.first { it !is SessionStatus.Initializing }
-        }
+    val sessionStatus: Flow<SessionStatus> get() = client.auth.sessionStatus
+
+    /**
+     * Interpret a status. The whole point is that four states get four answers.
+     *
+     * A 4xx from the refresh endpoint — a revoked or expired refresh token — is
+     * handled inside the library: it clears the session itself and reports
+     * NotAuthenticated(isSignOut = true). So "asked and was refused" still ends
+     * at the sign-in screen, which is what stops the careful handling below from
+     * becoming a zombie that shows "No connection" forever at a server that is
+     * actually saying no. Only "could not ask" is held open.
+     *
+     * Null means the status is still settling and the caller should keep waiting.
+     */
+    fun interpret(status: SessionStatus): SessionState? = when (status) {
+        is SessionStatus.Initializing -> null
+
+        is SessionStatus.Authenticated ->
+            SessionState.Ready(status.session.user?.id.orEmpty(), status.session.user?.email)
+
+        // The cause — NetworkError or InternalServerError — is deliberately not
+        // read: the property is deprecated, and both causes mean the same thing
+        // here. Could not ask, versus asked and refused, is the distinction that
+        // matters, and a 5xx is on the "could not ask" side of it.
+        is SessionStatus.RefreshFailure -> SessionState.Unreachable(
+            "Could not confirm your session — no connection, or the server is not answering."
+        )
+
+        is SessionStatus.NotAuthenticated ->
+            if (status.isSignOut || !sessionStore.hasStoredSession()) {
+                // Deliberate, revoked, or a fresh install — all genuinely signed out.
+                SessionState.NeedsSignIn
+            } else {
+                // Not authenticated, yet something is still stored. Treat that as
+                // unvalidatable rather than as a decision, and leave it alone.
+                SessionState.Unreachable("Could not confirm your session. Showing the last board loaded.")
+            }
+    }
 
     val currentEmail: String? get() = client.auth.currentUserOrNull()?.email
 
@@ -83,16 +118,14 @@ class SessionRepository @Inject constructor(
     }
 
     /**
-     * Best effort on the server, unconditional on the device.
+     * The one credential-destroying function in the app.
      *
-     * Revoking the refresh token needs the network and can fail; discarding the
-     * copy on this phone cannot and must not. Previously this only called
-     * signOut(), so an offline sign-out reported itself done while leaving the
-     * session on disk — the app said "you have been signed out" and a relaunch
-     * walked straight back onto the board. clearSession() drops the in-memory
-     * session and the stored one whatever the server said.
+     * Called from the Sign out button and nowhere else — see the class comment.
+     * Revocation needs the network and may fail; discarding the local copy
+     * cannot and must not, so the server call is best effort and clearSession()
+     * is unconditional.
      */
-    suspend fun signOut() {
+    suspend fun signOutByUser() {
         runCatching { client.auth.signOut() }
             .onFailure { Log.w(TAG, "could not revoke the session server-side", it) }
         runCatching { client.auth.clearSession() }
@@ -100,27 +133,26 @@ class SessionRepository @Inject constructor(
     }
 
     /**
-     * The caller's role, straight from `profiles`.
+     * The role for an already-authenticated user.
      *
-     * Its RLS policy allows a user to select their own row and nothing else, so
-     * this either returns exactly one row or none. None means the profile is
-     * missing — which happened for real during Stage 0, when the admin user was
-     * created before the auto-provisioning trigger existed — and it must be a
-     * failure rather than a default.
+     * Takes the id rather than discovering it. This used to call
+     * currentUserOrNull() and treat null as "this account has no usable
+     * profile", so an expired token — a network condition — was read as a
+     * disqualifying fact and cost the user their session. Authentication is
+     * decided upstream now, and this cannot be reached without it.
+     *
+     * The profiles policy allows a user to select their own row and nothing
+     * else, so this returns exactly one row or none. None means the row is
+     * genuinely missing, which happened for real in Stage 0 when the admin user
+     * was created before the provisioning trigger existed.
      */
-    suspend fun loadRole(): Result<UserRole> = runCatching {
-        val userId = client.auth.currentUserOrNull()?.id
-            ?: throw ProfileUnusableException("no signed-in user")
-
+    suspend fun loadRole(userId: String): Result<UserRole> = runCatching {
         val rows = client.from("profiles")
             .select(Columns.raw("id, role, display_name")) {
                 filter { eq("id", userId) }
             }
             .decodeList<ProfileDto>()
 
-        // Reached only when the request itself succeeded, so an empty result
-        // really does mean there is no row — which happened for real in Stage 0,
-        // when the admin user was created before the provisioning trigger.
         val row = rows.firstOrNull()
             ?: throw ProfileUnusableException("no profile row for this user")
         UserRole.fromStored(row.role)

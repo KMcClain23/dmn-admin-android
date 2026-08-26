@@ -2,27 +2,56 @@ package com.dmnarration.admin.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.dmnarration.admin.data.AuthState
 import com.dmnarration.admin.data.ProfileUnusableException
 import com.dmnarration.admin.data.SessionRepository
+import com.dmnarration.admin.data.SessionState
+import com.dmnarration.admin.domain.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
-import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.seconds
+
+/** What the app shows, and why. */
+sealed interface AuthState {
+    data object Loading : AuthState
+    data object SignedOut : AuthState
+    data class SignedIn(val role: UserRole, val email: String?) : AuthState
+
+    /**
+     * The account's role is missing or unrecognised, so its permissions cannot
+     * be established and no data may be shown.
+     *
+     * The session is deliberately NOT destroyed. Refusing to show data is the
+     * most an automatic path may do; only the Sign out button discards a
+     * credential.
+     */
+    data class RoleUnavailable(val reason: String) : AuthState
+
+    /**
+     * Signed in, session intact, just not confirmable right now — almost always
+     * the network. Retryable, and never a sign-out.
+     */
+    data class Unreachable(val reason: String) : AuthState
+}
 
 /**
- * Who is signed in, and what the launch decision is.
+ * Who is signed in, observed rather than sampled.
  *
- * The role is loaded here on every cold start rather than being remembered
- * between launches, and a failure to load it signs the user out. A session
- * whose permissions are unknown must not reach the board — `UserRole.UNKNOWN`
- * grants nothing and shows an error instead.
+ * The session status is collected for the whole lifetime of the ViewModel, not
+ * read once at launch. Reading once was why an access token expiring under a
+ * running app went unnoticed until something rebuilt the screen, and why
+ * recovery took a restart: supabase-kt retries a failed refresh by itself, and
+ * nothing here was listening for it to succeed.
  *
- * "Could not be read" and "could not be asked" are different, though, and only
- * the first is grounds for signing anyone out.
+ * Nothing in this class destroys a credential. `signOut()` exists, is wired to
+ * the Sign out button, and is the only route to the repository's single
+ * credential-clearing function.
  */
 @HiltViewModel
 class AppViewModel @Inject constructor(
@@ -38,68 +67,82 @@ class AppViewModel @Inject constructor(
     private val _signingIn = MutableStateFlow(false)
     val signingIn: StateFlow<Boolean> = _signingIn.asStateFlow()
 
+    /** Whose role is already resolved, so a token refresh does not re-fetch it. */
+    private var resolvedUserId: String? = null
+    private var settleTimeout: Job? = null
+
     init {
-        viewModelScope.launch { restore() }
+        // If the status never settles, say so rather than spinning. Offline the
+        // restore retries and can sit at Initializing far longer than anyone
+        // waits — a network answer, not an authentication one.
+        settleTimeout = viewModelScope.launch {
+            delay(SETTLE_TIMEOUT)
+            if (_state.value is AuthState.Loading) {
+                _state.value = AuthState.Unreachable("No connection. Check your network and try again.")
+            }
+        }
+        viewModelScope.launch {
+            sessions.sessionStatus.collect { status ->
+                val interpreted = sessions.interpret(status) ?: return@collect // still settling
+                settleTimeout?.cancel()
+                apply(interpreted)
+            }
+        }
     }
 
-    private suspend fun restore() {
-        _state.value = AuthState.Loading
-        val status = sessions.awaitInitialised()
-        if (status == null) {
-            // The restore did not settle in time, which offline it often does
-            // not. That is a network answer and not an authentication one, so
-            // it lands where every other network answer lands: session kept,
-            // retry offered, nobody signed out.
-            _state.value = AuthState.RoleCheckFailed(
-                "No connection. Check your network and try again."
-            )
-            return
+    private suspend fun apply(session: SessionState) {
+        when (session) {
+            is SessionState.NeedsSignIn -> {
+                resolvedUserId = null
+                _state.value = AuthState.SignedOut
+            }
+
+            is SessionState.Unreachable -> {
+                // Keep what is on screen if the board is already up. A failed
+                // refresh says nothing about entitlement, and the last board
+                // loaded remains the best information available.
+                if (_state.value !is AuthState.SignedIn) {
+                    _state.value = AuthState.Unreachable(session.message)
+                }
+            }
+
+            is SessionState.Ready -> {
+                // A successful refresh re-emits Authenticated. Re-resolving the
+                // role every time would rebuild the whole screen for nothing.
+                if (resolvedUserId == session.userId && _state.value is AuthState.SignedIn) return
+                resolveRole(session.userId, session.email)
+            }
         }
-        if (status !is SessionStatus.Authenticated) {
-            _state.value = AuthState.SignedOut
-            return
-        }
-        resolveRole()
     }
 
     /**
-     * Turn an authenticated session into a usable one by establishing its role.
+     * Establish the role for an authenticated user.
      *
-     * Signing out on failure is the point. Stage 0 showed what a missing profile
-     * row looks like from the outside — every symptom pointed somewhere other
-     * than the cause — so this refuses to continue rather than guessing at a
-     * default and producing a board that may be showing the wrong person the
-     * wrong things.
+     * Every outcome here is non-destructive. A missing or unrecognised role
+     * refuses to show data and offers Sign out as a choice; it does not make
+     * that choice on the user's behalf.
      */
-    private suspend fun resolveRole() {
-        val result = sessions.loadRole()
-        val role = result.getOrElse { failure ->
-            if (failure is ProfileUnusableException) {
-                // A real fact about this account: there is no usable profile, so
-                // the session's permissions are unknowable and it must not be
-                // used. This is the case item 14 was written for.
-                sessions.signOut()
-                _state.value = AuthState.RoleUnavailable(
-                    "Signed in, but your profile could not be read, so the app cannot tell " +
-                        "what you are allowed to see. You have been signed out."
+    private suspend fun resolveRole(userId: String, email: String?) {
+        val role = sessions.loadRole(userId).getOrElse { failure ->
+            _state.value = if (failure is ProfileUnusableException) {
+                AuthState.RoleUnavailable(
+                    "Your profile could not be read, so the app cannot tell what you are " +
+                        "allowed to see. Nothing is shown until that is fixed."
                 )
             } else {
-                // The request never landed. That says nothing whatsoever about
-                // permissions, and signing out here would mean opening the app
-                // in a lift costs you a valid session and a re-typed password.
-                _state.value = AuthState.RoleCheckFailed(describe(failure))
+                AuthState.Unreachable(describe(failure))
             }
             return
         }
         if (!role.isRecognised) {
-            sessions.signOut()
             _state.value = AuthState.RoleUnavailable(
-                "Your account has a role this version of the app does not recognise. " +
-                    "You have been signed out."
+                "Your account has a role this version of the app does not recognise, so " +
+                    "nothing is shown."
             )
             return
         }
-        _state.value = AuthState.SignedIn(role, sessions.currentEmail)
+        resolvedUserId = userId
+        _state.value = AuthState.SignedIn(role, email ?: sessions.currentEmail)
     }
 
     fun signIn(email: String, password: String) {
@@ -107,31 +150,32 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             _signingIn.value = true
             _signInError.value = null
+            // On success the status flow emits Authenticated and the collector
+            // takes it from there — there is no second path to keep in step.
             sessions.signIn(email, password)
-                .onSuccess { resolveRole() }
                 .onFailure { _signInError.value = describe(it) }
             _signingIn.value = false
         }
     }
 
+    /** The only route to credential destruction, wired to the Sign out button. */
     fun signOut() {
         viewModelScope.launch {
-            sessions.signOut()
+            resolvedUserId = null
             _signInError.value = null
+            sessions.signOutByUser()
             _state.value = AuthState.SignedOut
         }
     }
 
-    /** Try the role fetch again, keeping the session. */
-    fun retryRoleCheck() {
+    /** Ask again, destroying nothing. */
+    fun retry() {
         viewModelScope.launch {
             _state.value = AuthState.Loading
-            resolveRole()
+            val current = sessions.sessionStatus.first()
+            val interpreted = sessions.interpret(current)
+            if (interpreted != null) apply(interpreted) else _state.value = AuthState.Loading
         }
-    }
-
-    fun dismissRoleError() {
-        _state.value = AuthState.SignedOut
     }
 
     /**
@@ -152,5 +196,9 @@ class AppViewModel @Inject constructor(
                 "No connection. Check your network and try again."
             else -> "Could not sign in: ${message.ifBlank { "unknown error" }}"
         }
+    }
+
+    private companion object {
+        val SETTLE_TIMEOUT = 10.seconds
     }
 }

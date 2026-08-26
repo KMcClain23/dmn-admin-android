@@ -30,7 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.dmnarration.admin.data.AuthState
+import com.dmnarration.admin.ui.AuthState
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.ui.AppViewModel
 import com.dmnarration.admin.ui.auth.SignInScreen
@@ -96,6 +96,9 @@ private fun AppRoot(modifier: Modifier = Modifier) {
                 onSignIn = app::signIn,
             )
 
+            // The account's permissions cannot be established, so no data is
+            // shown. The session is left alone — signing out is offered as a
+            // choice, not taken on the user's behalf.
             is AuthState.RoleUnavailable -> Centered {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -105,15 +108,18 @@ private fun AppRoot(modifier: Modifier = Modifier) {
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 32.dp),
                     )
-                    TextButton(onClick = app::dismissRoleError) {
-                        Text("Back to sign in", color = DmnTheme.colors.accentAmber)
+                    TextButton(onClick = app::retry) {
+                        Text("Try again", color = DmnTheme.colors.accentAmber)
+                    }
+                    TextButton(onClick = app::signOut) {
+                        Text("Sign out", color = DmnTheme.colors.textMuted)
                     }
                 }
             }
 
-            // Session intact — the role just could not be fetched. Retry, or
-            // leave deliberately; nobody is signed out for being offline.
-            is AuthState.RoleCheckFailed -> Centered {
+            // Session intact, just unconfirmable. Nobody is signed out for being
+            // offline.
+            is AuthState.Unreachable -> Centered {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         s.reason,
@@ -128,7 +134,7 @@ private fun AppRoot(modifier: Modifier = Modifier) {
                         color = DmnTheme.colors.textMuted,
                         modifier = Modifier.padding(top = 8.dp),
                     )
-                    TextButton(onClick = app::retryRoleCheck) {
+                    TextButton(onClick = app::retry) {
                         Text("Try again", color = DmnTheme.colors.accentAmber)
                     }
                     TextButton(onClick = app::signOut) {
