@@ -91,7 +91,14 @@ class TodayAndRoleTest {
         assertFalse(Capabilities.of(UserRole.UNKNOWN).canUseWebAdmin)
     }
 
-    @Test fun `nobody can edit in Stage 1`() {
-        for (role in UserRole.entries) assertFalse(Capabilities.of(role).canEdit)
+    /**
+     * Stage 2 grants writes to admin and to nobody else. The editor case is the
+     * one that matters: they are read-only by design, and F3 grants them a
+     * board without granting them a pen.
+     */
+    @Test fun `only an admin may write`() {
+        assertTrue(Capabilities.of(UserRole.ADMIN).canEdit)
+        assertFalse(Capabilities.of(UserRole.EDITOR).canEdit)
+        assertFalse(Capabilities.of(UserRole.UNKNOWN).canEdit)
     }
 }

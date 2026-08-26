@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsDisplayed
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.Capabilities
@@ -13,6 +14,7 @@ import com.dmnarration.admin.domain.StudioSettings
 import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.ui.theme.DmnAdminTheme
 import kotlinx.datetime.LocalDate
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import kotlin.time.Instant
@@ -65,7 +67,10 @@ class CardCapabilityTest {
         createdAt = Instant.parse("2026-08-01T00:00:00Z"),
     )
 
+    private var toggles = 0
+
     private fun render(capabilities: Capabilities) {
+        toggles = 0
         compose.setContent {
             DmnAdminTheme {
                 BoardCardItem(
@@ -74,10 +79,35 @@ class CardCapabilityTest {
                     settings = settings,
                     today = today,
                     onClick = {},
+                    onToggleFirst15 = { toggles++ },
                     modifier = Modifier.testTag("card"),
                 )
             }
         }
+    }
+
+    /**
+     * The First-15 row is a target only for a session that may write.
+     *
+     * Both renders show the same row — a read-only viewer sees an identical
+     * card, it simply does not respond. Asserting the callback count rather
+     * than appearance is the point: a disabled-looking control that still fires
+     * would pass any visual check.
+     */
+    @Test
+    fun adminCanToggleFirst15() {
+        render(Capabilities.of(UserRole.ADMIN))
+        compose.onNodeWithText("Sep 1").performClick()
+        assertEquals("an admin's tap must reach the ViewModel", 1, toggles)
+    }
+
+    @Test
+    fun aReadOnlySessionCannotToggleFirst15() {
+        render(Capabilities.of(UserRole.EDITOR))
+        compose.onNodeWithText("Sep 1").performClick()
+        assertEquals("a read-only session must not be able to fire a write", 0, toggles)
+        // and the row is still rendered, not hidden
+        compose.onNodeWithText("Sep 1").assertIsDisplayed()
     }
 
     @Test

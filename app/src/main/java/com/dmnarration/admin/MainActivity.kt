@@ -164,6 +164,7 @@ private fun BoardRoute(
         onRefresh = vm::refresh,
         onToggleFilter = vm::setDateFilter,
         onOpenCard = { selected = it },
+        onToggleFirst15 = vm::toggleFirst15,
         onSignOut = onSignOut,
     )
 

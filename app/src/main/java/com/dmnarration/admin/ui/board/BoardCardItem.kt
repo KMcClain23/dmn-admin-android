@@ -90,6 +90,7 @@ fun BoardCardItem(
     settings: StudioSettings,
     today: LocalDate,
     onClick: () -> Unit,
+    onToggleFirst15: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val c = DmnTheme.colors
@@ -199,8 +200,19 @@ fun BoardCardItem(
                     }
 
                     card.first15Due?.let { due ->
-                        // Non-interactive this stage: toggling it is a write.
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Interactive only when this session may write. The row
+                        // renders identically either way — a read-only viewer
+                        // sees the same card, just without a target.
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .then(
+                                    if (capabilities.canEdit) {
+                                        Modifier.clickable(onClick = onToggleFirst15)
+                                    } else Modifier
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Icon(
                                 if (card.first15Complete) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                                 null,

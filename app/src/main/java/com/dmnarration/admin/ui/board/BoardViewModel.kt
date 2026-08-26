@@ -15,6 +15,9 @@ import com.dmnarration.admin.domain.PipelineBucket
 import com.dmnarration.admin.domain.ProductionSubgroup
 import com.dmnarration.admin.domain.StudioSettings
 import com.dmnarration.admin.domain.UserRole
+import com.dmnarration.admin.domain.WriteOutcome
+import com.dmnarration.admin.domain.applyOptimistic
+import com.dmnarration.admin.domain.reconcileWrite
 import com.dmnarration.admin.domain.bucketPipeline
 import com.dmnarration.admin.domain.bucketProduction
 import com.dmnarration.admin.domain.currentDay
@@ -26,6 +29,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import javax.inject.Inject
 
 data class BoardUiState(
@@ -59,6 +64,9 @@ class BoardViewModel @Inject constructor(
 
     private var role: UserRole = UserRole.UNKNOWN
     private var allCards: List<BoardCard> = emptyList()
+
+    /** Cards with a write in flight, so a double tap cannot race itself. */
+    private val inFlight = mutableSetOf<String>()
 
     // NOTE: there is deliberately no `today` field here. Holding one would
     // freeze every date, urgency colour and bucket at whatever day the app was
@@ -143,6 +151,54 @@ class BoardViewModel @Inject constructor(
                         error = describe(t),
                     )
                 }
+        }
+    }
+
+    /**
+     * Toggle a card's First-15, optimistically.
+     *
+     * Applies locally, writes, then reconciles against what the server actually
+     * returned — never against whether the call threw. An RLS-refused update
+     * comes back as a successful statement affecting zero rows, so "no
+     * exception" is not evidence of a save.
+     *
+     * The patch carries only `first_15_complete`. `updated_at` is a trigger's
+     * job and this must not touch it; if a rule the database owns ever appears
+     * in this file, the migration is wrong.
+     */
+    fun toggleFirst15(cardId: String) {
+        if (!_state.value.capabilities.canEdit) return
+        if (cardId in inFlight) return
+
+        val (optimistic, pending) = applyOptimistic(allCards, cardId) { card ->
+            card.copy(first15Complete = !card.first15Complete)
+        }
+        if (pending == null) return
+
+        inFlight += cardId
+        allCards = optimistic
+        _state.value = _state.value.copy(error = null)
+        reproject()
+
+        viewModelScope.launch {
+            val outcome = board
+                .updateCard(cardId, buildJsonObject {
+                    put("first_15_complete", optimistic.first { it.id == cardId }.first15Complete)
+                })
+                .fold(
+                    // A row means saved; null means zero rows, which is RLS
+                    // refusing this row rather than anything going wrong.
+                    onSuccess = { row -> row?.let(WriteOutcome::Saved) ?: WriteOutcome.Refused },
+                    onFailure = { WriteOutcome.Failed(describe(it)) },
+                )
+
+            val reduction = reconcileWrite(allCards, pending, outcome)
+            allCards = reduction.cards
+            inFlight -= cardId
+            _state.value = _state.value.copy(error = reduction.error)
+            reproject()
+            // A refusal says this session's view has changed, not just one row.
+            if (reduction.refresh) load(initial = false)
         }
     }
 

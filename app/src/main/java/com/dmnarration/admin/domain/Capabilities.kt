@@ -43,9 +43,10 @@ enum class UserRole {
  * the checks — and how one gets missed. Here a role's meaning is defined in one
  * place and the card does not know roles exist.
  *
- * `canEdit` is present and false for everyone because Stage 1 writes nothing.
- * It exists so Stage 2 wires into a seam that is already there rather than
- * introducing one.
+ * `canEdit` was present and false for everyone through Stage 1, so Stage 2
+ * could wire into a seam that already existed rather than introducing one.
+ * Stage 2 is that wiring: admin may write. Nothing else in the UI learns about
+ * roles — the gestures ask this.
  */
 data class Capabilities(
     /** pfh_rate, payment_type, estimated earnings. */
@@ -70,7 +71,7 @@ data class Capabilities(
                 canViewFinancials = true,
                 canViewStudioSettings = true,
                 canViewConfidentialCovers = true,
-                canEdit = false,
+                canEdit = true,
                 canUseWebAdmin = true,
             )
             UserRole.EDITOR -> Capabilities(

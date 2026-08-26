@@ -79,6 +79,7 @@ fun BoardScreen(
     onRefresh: () -> Unit,
     onToggleFilter: (DateFilter) -> Unit,
     onOpenCard: (BoardCard) -> Unit,
+    onToggleFirst15: (String) -> Unit,
     onSignOut: () -> Unit,
 ) {
     val c = DmnTheme.colors
@@ -153,6 +154,7 @@ fun BoardScreen(
                             },
                             state = state,
                             onOpenCard = onOpenCard,
+                            onToggleFirst15 = onToggleFirst15,
                         )
                     } else {
                         SectionList(
@@ -161,6 +163,7 @@ fun BoardScreen(
                             },
                             state = state,
                             onOpenCard = onOpenCard,
+                            onToggleFirst15 = onToggleFirst15,
                         )
                     }
                 }
@@ -207,6 +210,7 @@ private fun SectionList(
     sections: List<Pair<String, List<BoardCard>>>,
     state: BoardUiState,
     onOpenCard: (BoardCard) -> Unit,
+    onToggleFirst15: (String) -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -227,6 +231,7 @@ private fun SectionList(
                         settings = state.settings,
                         today = state.today,
                         onClick = { onOpenCard(cards[i]) },
+                        onToggleFirst15 = { onToggleFirst15(cards[i].id) },
                     )
                 }
             }
