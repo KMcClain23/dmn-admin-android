@@ -42,6 +42,16 @@ data class BoardCard(
     val recordingDates: List<LocalDate>,
     val wordsRecorded: Int?,
     val createdAt: Instant,
+    /**
+     * Set means the card has left the board.
+     *
+     * The board read never returns archived rows, so this is null on everything
+     * loaded — it exists for the optimistic archive, which has to make the card
+     * disappear while remaining in `allCards` so a rollback can restore it. The
+     * write's select carries the column back, otherwise a successful archive
+     * would return a row with this null and the card would reappear.
+     */
+    val archivedAt: Instant? = null,
 )
 
 /** Deadline colouring. Same three states the web pills use. */

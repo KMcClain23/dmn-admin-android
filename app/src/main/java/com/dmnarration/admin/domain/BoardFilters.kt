@@ -79,6 +79,18 @@ fun bucketProduction(cards: List<BoardCard>): Map<ProductionSubgroup, List<Board
         cards.filter { it.status == subgroup.status }.sortedWith(::compareCards)
     }
 
+/**
+ * The statuses the board shows, matching `board_for_session()`'s where clause.
+ *
+ * Needed because `isPipeline` is defined as "not production", so a card moved to
+ * 'released' would otherwise fall through to the Pipeline tab rather than
+ * leaving the board. The read never returns one; an optimistic Mark as Released
+ * creates one locally, which is the only way this list is ever exercised.
+ */
+val ACTIVE_STATUSES = setOf("contracted", "prepping", "recording", "editing")
+
+fun isActive(card: BoardCard): Boolean = card.status in ACTIVE_STATUSES
+
 /** The three statuses that mean a book is in production. */
 private val PRODUCTION_STATUSES = setOf("prepping", "recording", "editing")
 

@@ -49,6 +49,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.dmnarration.admin.domain.ArchiveReason
+import com.dmnarration.admin.domain.STATUS_RELEASED
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.DateFilter
 import com.dmnarration.admin.domain.PipelineBucket
@@ -80,12 +82,53 @@ fun BoardScreen(
     onToggleFilter: (DateFilter) -> Unit,
     onOpenCard: (BoardCard) -> Unit,
     onToggleFirst15: (String) -> Unit,
+    onMoveTo: (String, String) -> Unit,
+    onArchive: (String, ArchiveReason, String) -> Unit,
     onSignOut: () -> Unit,
 ) {
     val c = DmnTheme.colors
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 2 })
     var menuOpen by remember { mutableStateOf(false) }
+
+    // Which card a gesture is currently about. One at a time by construction:
+    // there is one board and one finger, and a second dialog stacked over the
+    // first would leave the user confirming an action against a card they can
+    // no longer see.
+    var actionCard by remember { mutableStateOf<BoardCard?>(null) }
+    var releaseCard by remember { mutableStateOf<BoardCard?>(null) }
+    var archiveCard by remember { mutableStateOf<BoardCard?>(null) }
+
+    actionCard?.let { card ->
+        BoardActionSheet(
+            card = card,
+            onDismiss = { actionCard = null },
+            onAction = { action ->
+                actionCard = null
+                when {
+                    action.isArchive -> archiveCard = card
+                    action.status == STATUS_RELEASED -> releaseCard = card
+                    else -> onMoveTo(card.id, action.status!!)
+                }
+            },
+        )
+    }
+
+    releaseCard?.let { card ->
+        ReleaseConfirmDialog(
+            card = card,
+            onConfirm = { releaseCard = null; onMoveTo(card.id, STATUS_RELEASED) },
+            onDismiss = { releaseCard = null },
+        )
+    }
+
+    archiveCard?.let { card ->
+        ArchiveConfirmDialog(
+            card = card,
+            onConfirm = { reason, notes -> archiveCard = null; onArchive(card.id, reason, notes) },
+            onDismiss = { archiveCard = null },
+        )
+    }
 
     Column(
         Modifier
@@ -173,6 +216,8 @@ fun BoardScreen(
                             state = state,
                             onOpenCard = onOpenCard,
                             onToggleFirst15 = onToggleFirst15,
+                            onLongPress = { actionCard = it },
+                            onSwipeArchive = { archiveCard = it },
                         )
                     } else {
                         SectionList(
@@ -182,6 +227,8 @@ fun BoardScreen(
                             state = state,
                             onOpenCard = onOpenCard,
                             onToggleFirst15 = onToggleFirst15,
+                            onLongPress = { actionCard = it },
+                            onSwipeArchive = { archiveCard = it },
                         )
                     }
                 }
@@ -229,6 +276,8 @@ private fun SectionList(
     state: BoardUiState,
     onOpenCard: (BoardCard) -> Unit,
     onToggleFirst15: (String) -> Unit,
+    onLongPress: (BoardCard) -> Unit,
+    onSwipeArchive: (BoardCard) -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -250,6 +299,8 @@ private fun SectionList(
                         today = state.today,
                         onClick = { onOpenCard(cards[i]) },
                         onToggleFirst15 = { onToggleFirst15(cards[i].id) },
+                        onLongPress = { onLongPress(cards[i]) },
+                        onSwipeArchive = { onSwipeArchive(cards[i]) },
                     )
                 }
             }

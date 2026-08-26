@@ -39,6 +39,8 @@ data class BoardCardDto(
     val recording_dates: List<String>? = null,
     val words_recorded: Int? = null,
     val created_at: String? = null,
+    /** Absent from the board read, present in the write's select. */
+    val archived_at: String? = null,
 )
 
 private const val TAG = "BoardDto"
@@ -91,6 +93,7 @@ fun BoardCardDto.toDomain(): BoardCard = BoardCard(
     recordingDates = recording_dates.orEmpty().mapNotNull(::date),
     wordsRecorded = words_recorded,
     createdAt = instant(created_at),
+    archivedAt = archived_at?.let { runCatching { Instant.parse(it) }.getOrNull() },
 )
 
 @Serializable

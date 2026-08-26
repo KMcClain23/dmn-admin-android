@@ -165,6 +165,8 @@ private fun BoardRoute(
         onToggleFilter = vm::setDateFilter,
         onOpenCard = { selected = it },
         onToggleFirst15 = vm::toggleFirst15,
+        onMoveTo = vm::moveTo,
+        onArchive = { id, reason, notes -> vm.archive(id, reason.stored, notes) },
         onSignOut = onSignOut,
     )
 

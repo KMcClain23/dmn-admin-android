@@ -21,6 +21,7 @@ import com.dmnarration.admin.domain.reconcileWrite
 import com.dmnarration.admin.domain.bucketPipeline
 import com.dmnarration.admin.domain.bucketProduction
 import com.dmnarration.admin.domain.currentDay
+import com.dmnarration.admin.domain.isActive
 import com.dmnarration.admin.domain.isPipeline
 import com.dmnarration.admin.domain.isProduction
 import com.dmnarration.admin.domain.passesDateFilter
@@ -29,8 +30,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.time.Clock
 import javax.inject.Inject
 
 data class BoardUiState(
@@ -115,7 +118,7 @@ class BoardViewModel @Inject constructor(
         reproject()
     }
 
-    private fun load(initial: Boolean) {
+    private fun load(initial: Boolean, keepError: Boolean = false) {
         if (!role.isRecognised) {
             _state.value = _state.value.copy(
                 loading = false,
@@ -127,7 +130,7 @@ class BoardViewModel @Inject constructor(
             _state.value = _state.value.copy(
                 loading = initial,
                 refreshing = !initial,
-                error = null,
+                error = if (keepError) _state.value.error else null,
             )
 
             // Only when the session may read them. An editor has no policy
@@ -145,7 +148,13 @@ class BoardViewModel @Inject constructor(
                     _state.value = _state.value.copy(
                         loading = false,
                         refreshing = false,
-                        error = null,
+                        // A refusal's message outlives the refresh it triggers.
+                        // The board may well re-read fine — only the update
+                        // policy may have changed — but the user's change still
+                        // did not happen, and saying so and then unsaying it
+                        // one second later is how a refused write comes to look
+                        // like a successful one.
+                        error = if (keepError) _state.value.error else null,
                         refused = false,
                         settings = settings,
                         // Restores what a refusal withdrew. Only an admin gets
@@ -208,14 +217,67 @@ class BoardViewModel @Inject constructor(
      * job and this must not touch it; if a rule the database owns ever appears
      * in this file, the migration is wrong.
      */
-    fun toggleFirst15(cardId: String) {
+    fun toggleFirst15(cardId: String) = mutate(cardId,
+        edit = { it.copy(first15Complete = !it.first15Complete) },
+        patch = { card -> buildJsonObject { put("first_15_complete", card.first15Complete) } },
+    )
+
+    /**
+     * Move a card to another status.
+     *
+     * `released_at` is deliberately absent from the patch even when moving to
+     * 'released'. A trigger stamps it; writing it here would be the app owning a
+     * rule the database owns, and 2C.4 says that means the migration is wrong.
+     */
+    fun moveTo(cardId: String, status: String) = mutate(cardId,
+        edit = { it.copy(status = status) },
+        patch = { card -> buildJsonObject { put("status", card.status) } },
+    )
+
+    /**
+     * Archive a card, with the reason and notes the confirm dialog collected.
+     *
+     * `archivedAt` is set locally only so the optimistic apply can drop the card
+     * from the board immediately. The server's row replaces it on success, and a
+     * rollback restores the captured card verbatim, so the guessed timestamp
+     * never outlives the request either way.
+     */
+    fun archive(cardId: String, reason: String, notes: String) = mutate(cardId,
+        edit = { it.copy(archivedAt = Clock.System.now()) },
+        patch = {
+            buildJsonObject {
+                put("archived_at", Clock.System.now().toString())
+                put("archived_reason", reason)
+                put("archived_notes", notes)
+            }
+        },
+    )
+
+    /**
+     * Every write goes through here.
+     *
+     * One optimistic apply, one reconcile, one rollback, one refusal branch —
+     * so a gesture added later inherits the failure semantics instead of
+     * reimplementing them. Each gesture creates a refusal case, an offline case
+     * and a rollback case by construction, and this stage has already produced
+     * four bugs that lived exclusively in those. They are the same three cases
+     * every time, so they are written down once.
+     *
+     * `edit` is the optimistic guess; `patch` is derived from the edited card so
+     * the two cannot drift apart. Nothing here sets `updated_at` or
+     * `released_at`: those are triggers.
+     */
+    private fun mutate(
+        cardId: String,
+        edit: (BoardCard) -> BoardCard,
+        patch: (BoardCard) -> JsonObject,
+    ) {
         if (!_state.value.capabilities.canEdit) return
         if (cardId in inFlight) return
 
-        val (optimistic, pending) = applyOptimistic(allCards, cardId) { card ->
-            card.copy(first15Complete = !card.first15Complete)
-        }
+        val (optimistic, pending) = applyOptimistic(allCards, cardId, edit)
         if (pending == null) return
+        val edited = optimistic.first { it.id == cardId }
 
         inFlight += cardId
         allCards = optimistic
@@ -224,9 +286,7 @@ class BoardViewModel @Inject constructor(
 
         viewModelScope.launch {
             val outcome = board
-                .updateCard(cardId, buildJsonObject {
-                    put("first_15_complete", optimistic.first { it.id == cardId }.first15Complete)
-                })
+                .updateCard(cardId, patch(edited))
                 .fold(
                     // A row means saved; null means zero rows, which is RLS
                     // refusing this row rather than anything going wrong.
@@ -240,7 +300,7 @@ class BoardViewModel @Inject constructor(
             _state.value = _state.value.copy(error = reduction.error)
             reproject()
             // A refusal says this session's view has changed, not just one row.
-            if (reduction.refresh) load(initial = false)
+            if (reduction.refresh) load(initial = false, keepError = true)
         }
     }
 
@@ -253,7 +313,12 @@ class BoardViewModel @Inject constructor(
     private fun reproject() {
         val today = currentDay()
         val filter = _state.value.dateFilter
-        val visible = allCards.filter { passesDateFilter(it, filter, today) }
+        // archivedAt is the optimistic archive leaving the board. It stays in
+        // allCards so a refusal or a timeout can put it back verbatim.
+        val visible = allCards
+            .filter { it.archivedAt == null }
+            .filter(::isActive)
+            .filter { passesDateFilter(it, filter, today) }
         val pipelineCards = visible.filter(::isPipeline)
         val productionCards = visible.filter(::isProduction)
 

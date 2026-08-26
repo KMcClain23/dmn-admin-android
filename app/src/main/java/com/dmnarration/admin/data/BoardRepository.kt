@@ -120,7 +120,8 @@ class SupabaseBoardRepository @Inject constructor(
         const val ADMIN_COLUMNS =
             "id, title, author, co_narrator, cover_url, status, deadline, first15_due, " +
                 "first_15_complete, word_count, pfh_rate, payment_type, is_confidential, " +
-                "narration_format, narrator_share_percent, recording_dates, words_recorded, created_at"
+                "narration_format, narrator_share_percent, recording_dates, words_recorded, created_at, " +
+                "archived_at"
     }
 }
 

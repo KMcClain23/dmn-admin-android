@@ -1,5 +1,17 @@
 package com.dmnarration.admin.ui.board
 
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import com.dmnarration.admin.domain.SwipeToArchive
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -83,6 +95,7 @@ private fun urgencyColor(u: Urgency): Color = when (u) {
  * not change a card's height, or an editor's board would be laid out
  * differently from an admin's for no reason a viewer could see.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BoardCardItem(
     card: BoardCard,
@@ -91,22 +104,64 @@ fun BoardCardItem(
     today: LocalDate,
     onClick: () -> Unit,
     onToggleFirst15: () -> Unit = {},
+    onLongPress: () -> Unit = {},
+    onSwipeArchive: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val c = DmnTheme.colors
     val coNarrators = parseCoNarrators(card.coNarrator)
     val format = card.narrationFormat?.takeIf { it != "solo" }
 
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(CARD_HEIGHT)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-            .border(1.dp, SurfaceBorder, RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(12.dp)
-    ) {
+    // Gestures only exist for a session that may write. Without this an editor
+    // could long-press into a menu of things the server would refuse, or swipe a
+    // card away and watch it come back.
+    val gesturesEnabled = capabilities.canEdit
+    val density = LocalDensity.current
+    var offsetDp by remember(card.id) { mutableFloatStateOf(0f) }
+
+    Box(modifier.fillMaxWidth().height(CARD_HEIGHT)) {
+        if (offsetDp < 0f) ArchiveAffordance()
+
+        Box(
+            Modifier
+                .offset { IntOffset(with(density) { offsetDp.dp.roundToPx() }, 0) }
+                .fillMaxWidth()
+                .height(CARD_HEIGHT)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Surface)
+                .border(1.dp, SurfaceBorder, RoundedCornerShape(8.dp))
+                .then(
+                    if (gesturesEnabled) {
+                        Modifier.pointerInput(card.id) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    // Velocity is not available from this
+                                    // detector, so displacement is the only
+                                    // route here; the flick is covered by the
+                                    // threshold once the drag has travelled.
+                                    if (SwipeToArchive.shouldArchive(offsetDp, 0f)) {
+                                        offsetDp = SwipeToArchive.MAX_SWIPE_DP
+                                        onSwipeArchive()
+                                    } else {
+                                        offsetDp = 0f
+                                    }
+                                },
+                                onDragCancel = { offsetDp = 0f },
+                            ) { change, drag ->
+                                change.consume()
+                                offsetDp = SwipeToArchive.clampOffset(
+                                    offsetDp + with(density) { drag.toDp().value },
+                                )
+                            }
+                        }
+                    } else Modifier,
+                )
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = if (gesturesEnabled) onLongPress else null,
+                )
+                .padding(12.dp)
+        ) {
         Row(Modifier.fillMaxSize()) {
             Box(
                 Modifier
@@ -256,6 +311,7 @@ fun BoardCardItem(
                     .align(Alignment.TopEnd),
             )
         }
+    }
     }
 }
 
