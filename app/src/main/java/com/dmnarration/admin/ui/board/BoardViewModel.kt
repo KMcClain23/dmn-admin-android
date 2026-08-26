@@ -1,8 +1,10 @@
 package com.dmnarration.admin.ui.board
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.lifecycle.viewModelScope
+import com.dmnarration.admin.data.BoardAccessNotEnabledException
 import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.data.StudioSettingsRepository
 import com.dmnarration.admin.domain.BoardCard
@@ -166,9 +168,23 @@ class BoardViewModel @Inject constructor(
         )
     }
 
+    /**
+     * One sentence for the person; the detail goes to the log.
+     *
+     * This used to interpolate the exception message straight onto the screen.
+     * supabase-kt's message carries the request that failed — full URL with
+     * query string, and the headers, including Authorization and apikey. They
+     * arrive truncated, but that truncation is the library's choice rather than
+     * ours, and this is the surface an editor is eventually meant to see. An
+     * error a person reads gets a sentence and a way forward; the object it came
+     * from is for whoever is debugging.
+     */
     private fun describe(t: Throwable): String {
+        Log.w(TAG, "board load failed", t)
         val message = t.message.orEmpty()
         return when {
+            t is BoardAccessNotEnabledException ->
+                "Board access is not enabled for this account yet."
             message.contains("Unable to resolve host", ignoreCase = true) ||
                 message.contains("timeout", ignoreCase = true) ||
                 message.contains("Failed to connect", ignoreCase = true) ||
@@ -177,7 +193,11 @@ class BoardViewModel @Inject constructor(
             message.contains("permission denied", ignoreCase = true) ||
                 message.contains("JWT", ignoreCase = true) ->
                 "Your session is no longer allowed to read the board. Try signing out and in again."
-            else -> "Could not load the board: ${message.ifBlank { "unknown error" }}"
+            else -> "Could not load the board. Pull down to try again."
         }
+    }
+
+    private companion object {
+        const val TAG = "BoardViewModel"
     }
 }

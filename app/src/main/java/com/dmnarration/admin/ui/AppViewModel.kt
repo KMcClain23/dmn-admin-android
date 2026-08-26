@@ -1,5 +1,6 @@
 package com.dmnarration.admin.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dmnarration.admin.data.ProfileUnusableException
@@ -183,6 +184,7 @@ class AppViewModel @Inject constructor(
      * fixes, and a single "sign-in failed" makes the user try the wrong one.
      */
     private fun describe(t: Throwable): String {
+        Log.w("AppViewModel", "auth failure", t)
         val message = t.message.orEmpty()
         return when {
             message.contains("Invalid login", ignoreCase = true) ||
@@ -194,7 +196,8 @@ class AppViewModel @Inject constructor(
                 message.contains("Failed to connect", ignoreCase = true) ||
                 t is java.io.IOException ->
                 "No connection. Check your network and try again."
-            else -> "Could not sign in: ${message.ifBlank { "unknown error" }}"
+            // Same rule as the board: a sentence on screen, the object in the log.
+            else -> "Could not sign in. Please try again."
         }
     }
 

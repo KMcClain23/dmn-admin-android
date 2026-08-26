@@ -24,6 +24,13 @@ import javax.inject.Singleton
  * board_cards next year from silently reaching a client that should not see it,
  * and what makes swapping in a narrower view a drop-in rather than a rewrite.
  */
+/**
+ * This role has no board to read — not an error to retry, a capability the
+ * account does not have yet.
+ */
+class BoardAccessNotEnabledException(val role: UserRole) :
+    Exception("no board source for role $role")
+
 @Singleton
 class BoardRepository @Inject constructor(
     private val client: SupabaseClient,
@@ -36,22 +43,34 @@ class BoardRepository @Inject constructor(
      */
     private val activeStatuses = listOf("contracted", "prepping", "recording", "editing")
 
-    private fun sourceFor(role: UserRole): String = when (role) {
+    /**
+     * The relation this role reads, or null when it has none.
+     *
+     * `board_cards_editor` does not exist until F3, and an editor role is one
+     * UPDATE to profiles.role away — not the "unreachable" this comment used to
+     * claim. Asking for a missing view answers PGRST205, which surfaced to a
+     * real person as a schema-cache error on the board.
+     *
+     * Deliberately NOT falling back to `board_cards` for an editor. RLS would
+     * answer zero rows and they would see an ordinary empty board,
+     * indistinguishable from "you have no projects" — a silent wrong answer in
+     * place of a loud one. Fail closed, and say which.
+     */
+    private fun sourceFor(role: UserRole): String? = when (role) {
         UserRole.ADMIN -> "board_cards"
-        // Does not exist yet, and is unreachable in Stage 1 — Capabilities.of
-        // grants an editor nothing and the UI never gets far enough to ask.
-        UserRole.EDITOR -> "board_cards_editor"
-        UserRole.UNKNOWN -> error("no board source for an unknown role")
+        UserRole.EDITOR -> null
+        UserRole.UNKNOWN -> null
     }
 
     private fun columnsFor(role: UserRole): String = when (role) {
         UserRole.ADMIN -> ADMIN_COLUMNS
         UserRole.EDITOR -> EDITOR_COLUMNS
-        UserRole.UNKNOWN -> error("no board columns for an unknown role")
+        UserRole.UNKNOWN -> ADMIN_COLUMNS // unreachable: sourceFor already refused
     }
 
     suspend fun loadBoard(role: UserRole): Result<List<BoardCard>> = runCatching {
-        client.from(sourceFor(role))
+        val source = sourceFor(role) ?: throw BoardAccessNotEnabledException(role)
+        client.from(source)
             .select(Columns.raw(columnsFor(role))) {
                 filter {
                     isIn("status", activeStatuses)
