@@ -148,6 +148,27 @@ fun BoardCardItem(
                                 },
                                 onDragCancel = { offsetDp = 0f },
                             ) { change, drag ->
+                                // Belt and braces, and honestly labelled: it
+                                // is NOT what makes the card win.
+                                //
+                                // This card sits inside a HorizontalPager that
+                                // claims horizontal drags of its own, so who
+                                // owns this gesture is a real question. Deleting
+                                // this line was mutation-tested and changed
+                                // nothing — both halves of SwipeVersusPagerTest
+                                // stayed green. The arbitration actually comes
+                                // from detectHorizontalDragGestures, which
+                                // consumes the slop crossing internally, plus
+                                // descendant-before-ancestor dispatch. So this
+                                // is insurance against the detector changing,
+                                // not the mechanism.
+                                //
+                                // The guarantee lives in SwipeVersusPagerTest,
+                                // which asserts the behaviour rather than this
+                                // line: a swipe on the card archives without
+                                // paging, and a drag on bare pager surface pages
+                                // without archiving. Consuming horizontal drags
+                                // one level higher up turns both of those red.
                                 change.consume()
                                 offsetDp = SwipeToArchive.clampOffset(
                                     offsetDp + with(density) { drag.toDp().value },
