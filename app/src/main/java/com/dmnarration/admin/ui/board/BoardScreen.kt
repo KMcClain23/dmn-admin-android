@@ -146,6 +146,18 @@ fun BoardScreen(
             when {
                 state.loading -> ShimmerList()
                 state.isEmpty && state.error == null -> EmptyBoard()
+                // Nothing to show and something to say: the banner is the
+                // whole answer. Falling through to the pager here rendered
+                // "no books" under every bucket heading, which reads as an
+                // empty board — the same false impression EmptyBoard is
+                // withheld to avoid, just spelled differently.
+                //
+                // An empty LazyColumn rather than nothing at all. PullToRefresh
+                // drives off nested scroll, so content that does not scroll
+                // cannot be pulled: rendering nothing here stranded a refused
+                // session on this screen with no way back short of restarting
+                // the app. This scrolls, and says nothing.
+                state.isEmpty -> LazyColumn(modifier = Modifier.fillMaxSize()) {}
                 else -> HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                     if (page == 0) {
                         SectionList(

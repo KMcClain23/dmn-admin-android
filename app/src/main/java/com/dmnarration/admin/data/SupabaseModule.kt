@@ -52,4 +52,18 @@ object SupabaseModule {
             install(Postgrest)
         }
     }
+
+    /**
+     * The repositories are bound through their interfaces so the ViewModel can
+     * be tested against fakes. Bug 6 was in the join between repository and
+     * ViewModel, not in either half, and that join is only reachable in a test
+     * if the repository can be substituted.
+     */
+    @Provides
+    fun provideBoardRepository(impl: SupabaseBoardRepository): BoardRepository = impl
+
+    @Provides
+    fun provideStudioSettingsRepository(
+        impl: SupabaseStudioSettingsRepository,
+    ): StudioSettingsRepository = impl
 }

@@ -71,6 +71,18 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests {
+            // android.util.Log throws by default off-device, which killed the
+            // coroutine inside BoardViewModel's failure branch before it could
+            // set the error — so the refusal tests saw an unchanged state and
+            // failed on their preconditions rather than on their subject.
+            // Returning defaults lets the logging line be what it is: a log
+            // line, not a control-flow hazard.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 kotlin {
@@ -88,6 +100,7 @@ tasks.withType<Test>().configureEach {
         .withPropertyName("guardedSources")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
+
 
 dependencies {
     implementation(libs.androidx.core.ktx)
@@ -125,6 +138,7 @@ dependencies {
     implementation(libs.androidx.security.crypto)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

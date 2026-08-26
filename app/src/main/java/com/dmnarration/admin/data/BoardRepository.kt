@@ -3,90 +3,83 @@ package com.dmnarration.admin.data
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.SettingKeys
 import com.dmnarration.admin.domain.StudioSettings
-import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.domain.studioSettingsFrom
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.serialization.json.JsonObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The board query, mirroring `/api/board-v2/cards`.
+ * The board is not readable by this session — not an error to retry, and not a
+ * board that happens to be empty.
  *
- * Two things are resolved from the role here and nowhere else in the app: which
- * relation to read, and which columns to ask for. That is the entire hook for
- * the eventual editor — a view named in one constant and a column list that
- * narrows — and it is why neither may leak upward into a ViewModel or a
- * composable.
- *
- * `select("*")` is never used. An explicit list is what stops a column added to
- * board_cards next year from silently reaching a client that should not see it,
- * and what makes swapping in a narrower view a drop-in rather than a rewrite.
+ * Carries no role, deliberately. The client's copy of the role is the thing
+ * bug 6 proved cannot be trusted; this refusal comes from the server, which is
+ * the only party that knows.
  */
+class BoardAccessNotEnabledException :
+    Exception("the signed-in account may not read the board")
+
 /**
- * This role has no board to read — not an error to retry, a capability the
- * account does not have yet.
+ * The board read and the one write Stage 2 performs.
+ *
+ * An interface because the join between this and the ViewModel is where bug 6
+ * lived, and that join can only be tested against a fake. Proving `loadBoard`
+ * raises proved nothing about what the screen did with the raise.
  */
-class BoardAccessNotEnabledException(val role: UserRole) :
-    Exception("no board source for role $role")
+interface BoardRepository {
+    suspend fun loadBoard(): Result<List<BoardCard>>
+    suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?>
+}
 
+/**
+ * The Supabase implementation.
+ *
+ * The read goes through an RPC rather than a table, which is the fix for bug 6.
+ * The app used to ask "what may an admin read?" using a role it had cached at
+ * sign-in, while RLS evaluated the live one; a demoted session got zero rows
+ * with HTTP 200 and rendered them as an ordinary empty board saying "No active
+ * projects". Nothing threw, so nothing could be caught.
+ *
+ * `board_for_session()` answers the role and its consequence in one breath. It
+ * raises before returning anything, so refusal arrives as an exception instead
+ * of an indistinguishable empty list. Note that a `security_invoker` view with
+ * an asserting predicate would NOT work here and was rejected: if RLS filters
+ * rows to zero first, the predicate never evaluates and the assertion never
+ * fires — inert in exactly the case it exists for. A function body always runs.
+ *
+ * There is deliberately no role dispatch left in the read path. Choosing the
+ * relation from a cached role is what produced the bug, so the client no longer
+ * chooses; the server refuses. The column list moved into the function's return
+ * type for the same reason `select("*")` was never used — one explicit list, now
+ * in the place that can actually enforce it.
+ */
 @Singleton
-class BoardRepository @Inject constructor(
+class SupabaseBoardRepository @Inject constructor(
     private val client: SupabaseClient,
-) {
+) : BoardRepository {
 
-    /**
-     * Active, non-archived work only: 'released' belongs on the Released page
-     * and 'audition' is not yet active production. Note that this excludes the
-     * one archived 'recording' card, which is why the board shows 20 and not 21.
-     */
-    private val activeStatuses = listOf("contracted", "prepping", "recording", "editing")
-
-    /**
-     * The relation this role reads, or null when it has none.
-     *
-     * `board_cards_editor` does not exist until F3, and an editor role is one
-     * UPDATE to profiles.role away — not the "unreachable" this comment used to
-     * claim. Asking for a missing view answers PGRST205, which surfaced to a
-     * real person as a schema-cache error on the board.
-     *
-     * Deliberately NOT falling back to `board_cards` for an editor. RLS would
-     * answer zero rows and they would see an ordinary empty board,
-     * indistinguishable from "you have no projects" — a silent wrong answer in
-     * place of a loud one. Fail closed, and say which.
-     */
-    private fun sourceFor(role: UserRole): String? = when (role) {
-        UserRole.ADMIN -> "board_cards"
-        UserRole.EDITOR -> null
-        UserRole.UNKNOWN -> null
-    }
-
-    private fun columnsFor(role: UserRole): String = when (role) {
-        UserRole.ADMIN -> ADMIN_COLUMNS
-        UserRole.EDITOR -> EDITOR_COLUMNS
-        UserRole.UNKNOWN -> ADMIN_COLUMNS // unreachable: sourceFor already refused
-    }
-
-    suspend fun loadBoard(role: UserRole): Result<List<BoardCard>> = runCatching {
-        val source = sourceFor(role) ?: throw BoardAccessNotEnabledException(role)
-        client.from(source)
-            .select(Columns.raw(columnsFor(role))) {
-                filter {
-                    isIn("status", activeStatuses)
-                    exact("archived_at", null)
-                }
-            }
-            .decodeList<BoardCardDto>()
-            .map { it.toDomain() }
+    override suspend fun loadBoard(): Result<List<BoardCard>> = runCatching {
+        try {
+            client.postgrest.rpc(BOARD_RPC)
+                .decodeList<BoardCardDto>()
+                .map { it.toDomain() }
+        } catch (t: Throwable) {
+            // Matching a token the migration raises, not prose that may be
+            // reworded. Anything else is a genuine transport or server fault and
+            // must keep its own identity — conflating the two would turn "no
+            // connection" into "you have no access", which is the same species
+            // of confident wrong answer in the other direction.
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
     }
 
     /**
      * Update one card and report what actually happened to it.
-     *
-     * `Result<BoardCard?>` with three meanings, and the middle one is why this
-     * does not return a plain Result<Unit>:
      *
      *   success(row)  — the server returned the row. Its copy is the truth; a
      *                   trigger may have stamped released_at or moved
@@ -97,56 +90,71 @@ class BoardRepository @Inject constructor(
      *   failure(t)    — the request failed: no network, or permission denied on
      *                   an ungranted column.
      *
-     * `select()` in the request is what makes PostgREST return the affected
-     * rows at all. Without it the call succeeds silently and a refusal is
-     * indistinguishable from a save — which is the whole failure this shape
-     * exists to make impossible to write by accident.
+     * `select()` in the request is what makes PostgREST return the affected rows
+     * at all. Without it the call succeeds silently and a refusal is
+     * indistinguishable from a save.
      *
-     * Nothing here sets updated_at or released_at. Those are triggers now; if
-     * that rule ever needs writing in Kotlin, the migration is wrong.
+     * Still a direct table update rather than an RPC: a single-row write needs
+     * no validation the schema cannot express, and its refusal is already
+     * distinguishable via the zero-rows contract above. The read needed an RPC
+     * because a refused read and an empty one are the same HTTP response.
+     *
+     * Nothing here sets updated_at or released_at. Those are triggers now.
      */
-    suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?> = runCatching {
-        client.from("board_cards")
-            .update(patch) {
-                select(Columns.raw(ADMIN_COLUMNS))
-                filter { eq("id", cardId) }
-            }
-            .decodeList<BoardCardDto>()
-            .firstOrNull()
-            ?.toDomain()
-    }
+    override suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?> =
+        runCatching {
+            client.from("board_cards")
+                .update(patch) {
+                    select(Columns.raw(ADMIN_COLUMNS))
+                    filter { eq("id", cardId) }
+                }
+                .decodeList<BoardCardDto>()
+                .firstOrNull()
+                ?.toDomain()
+        }
 
     private companion object {
-        /** Exactly the list `/api/board-v2/cards` selects. */
+        const val BOARD_RPC = "board_for_session"
+
+        /** The write's return shape. The read's list lives in the RPC signature. */
         const val ADMIN_COLUMNS =
             "id, title, author, co_narrator, cover_url, status, deadline, first15_due, " +
                 "first_15_complete, word_count, pfh_rate, payment_type, is_confidential, " +
                 "narration_format, narrator_share_percent, recording_dates, words_recorded, created_at"
-
-        /**
-         * The same list minus everything financial or confidential. Written now
-         * so the shape is decided while the reasoning is fresh; nothing reads it
-         * until the editor exists and `board_cards_editor` is created to match.
-         */
-        const val EDITOR_COLUMNS =
-            "id, title, author, co_narrator, cover_url, status, deadline, first15_due, " +
-                "first_15_complete, word_count, narration_format, narrator_share_percent, " +
-                "recording_dates, words_recorded, created_at"
     }
 }
 
 /**
+ * The marker `board_for_session()` raises, as it reaches the client.
+ *
+ * Checked against the whole cause chain because the transport wraps the
+ * PostgREST body at a depth that is not worth asserting on.
+ */
+internal fun Throwable.isBoardAccessRefusal(): Boolean {
+    var t: Throwable? = this
+    while (t != null) {
+        if (t.message?.contains(BOARD_ACCESS_MARKER) == true) return true
+        t = t.cause
+    }
+    return false
+}
+
+internal const val BOARD_ACCESS_MARKER = "BOARD_ACCESS_NOT_ENABLED"
+
+/**
  * The five tunable numbers.
  *
- * Only ever queried when the session may read them. An editor has no policy
- * granting select on site_settings, so asking would produce an error that looks
- * like a bug rather than a rule — the caller checks the capability and falls
- * back to DEFAULT_STUDIO_SETTINGS instead.
+ * An interface for the same reason as the board: the ViewModel takes one, so a
+ * test of the ViewModel needs one that does not reach the network.
  */
+interface StudioSettingsRepository {
+    suspend fun load(): Result<StudioSettings>
+}
+
 @Singleton
-class StudioSettingsRepository @Inject constructor(
+class SupabaseStudioSettingsRepository @Inject constructor(
     private val client: SupabaseClient,
-) {
+) : StudioSettingsRepository {
     private val keys = listOf(
         SettingKeys.WORDS_PER_NARRATION_HOUR,
         SettingKeys.WORDS_PER_FINISHED_HOUR,
@@ -155,7 +163,7 @@ class StudioSettingsRepository @Inject constructor(
         SettingKeys.HEAVY_DAY_HOURS,
     )
 
-    suspend fun load(): Result<StudioSettings> = runCatching {
+    override suspend fun load(): Result<StudioSettings> = runCatching {
         val rows = client.from("site_settings")
             .select(Columns.raw("key, value")) {
                 filter { isIn("key", keys) }

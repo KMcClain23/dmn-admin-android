@@ -76,16 +76,22 @@ class BoardViewModel @Inject constructor(
     private val _state = MutableStateFlow(BoardUiState(today = currentDay()))
     val state: StateFlow<BoardUiState> = _state.asStateFlow()
 
-    private var started = false
+    /**
+     * The role this board was loaded for, or null before the first load.
+     *
+     * Was a bare `started` boolean, which is the second fault found alongside
+     * bug 6: it made the first call the only call, so a role change that WAS
+     * noticed still would not re-load. Keying on the role instead means
+     * rotation — the case the flag existed for — still skips the fetch, because
+     * the role is unchanged, while an actual change does not.
+     */
+    private var loadedForRole: UserRole? = null
 
     fun start(role: UserRole) {
         this.role = role
         _state.value = _state.value.copy(capabilities = Capabilities.of(role))
-        // The caller keys this on the role, so it arrives once per role; the
-        // flag only stops a re-load when the composable is recreated around a
-        // surviving ViewModel, as it is on rotation.
-        if (started) return
-        started = true
+        if (loadedForRole == role) return
+        loadedForRole = role
         load(initial = true)
     }
 
@@ -121,7 +127,7 @@ class BoardViewModel @Inject constructor(
                 DEFAULT_STUDIO_SETTINGS
             }
 
-            board.loadBoard(role)
+            board.loadBoard()
                 .onSuccess { cards ->
                     allCards = cards
                     _state.value = _state.value.copy(
@@ -129,27 +135,49 @@ class BoardViewModel @Inject constructor(
                         refreshing = false,
                         error = null,
                         settings = settings,
+                        // Restores what a refusal withdrew. Only an admin gets
+                        // rows out of board_for_session(), so a successful read
+                        // is the server itself saying this session still is
+                        // one. Recovery arrives by pull-to-refresh rather than
+                        // start(), because nothing re-resolves the role
+                        // mid-session — without this the cards would come back
+                        // read-only until the app was restarted.
+                        capabilities = Capabilities.of(role),
                     )
                     reproject()
                 }
                 .onFailure { t ->
-                    // Deliberately keeps allCards and the buckets. A failed
-                    // refresh is the app not knowing anything new, not the
-                    // board becoming empty — dropping twenty good cards
-                    // because a pull timed out is a worse answer than showing
-                    // them with a note. There is no security argument for
-                    // clearing either: a revoked session is not a failure, it
-                    // is a successful fetch that returns nothing (RLS answers
-                    // 200 with an empty list), which the success path below
-                    // handles by replacing state honestly. The boundary is the
-                    // server, and someone who has lost access can simply not
-                    // pull.
+                    // The two failures are not the same failure, and the old
+                    // code's claim that "a revoked session is a successful
+                    // fetch returning nothing" was exactly bug 6 written down:
+                    // it treated the refusal as a legitimate empty board.
+                    //
+                    // A transport fault keeps the cards. The app not knowing
+                    // anything new is not the board becoming empty, and
+                    // dropping twenty good cards because a pull timed out is a
+                    // worse answer than showing them with a note.
+                    //
+                    // A refusal clears them, and withdraws the gestures with
+                    // them. The server has said this session may not read the
+                    // board; continuing to show what it last read, with buttons
+                    // that still offer to change it, contradicts that answer.
+                    val refused = t is BoardAccessNotEnabledException
+                    if (refused) {
+                        allCards = emptyList()
+                        loadedForRole = null // so a restored role re-fetches
+                    }
                     _state.value = _state.value.copy(
                         loading = false,
                         refreshing = false,
                         settings = settings,
                         error = describe(t),
+                        capabilities = if (refused) {
+                            Capabilities.of(UserRole.UNKNOWN)
+                        } else {
+                            _state.value.capabilities
+                        },
                     )
+                    if (refused) reproject()
                 }
         }
     }

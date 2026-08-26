@@ -41,6 +41,9 @@ datastorePreferences = "1.2.1"
 securityCrypto = "1.1.0"
 
 junit = "4.13.2"
+# Matches the coroutines-core the supabase/ktor stack already resolves to on the
+# runtime classpath, so the test dispatcher cannot drift from the one under test.
+coroutines = "1.11.0"
 androidxTestExt = "1.3.0"
 espresso = "3.7.0"
 
@@ -79,6 +82,7 @@ androidx-datastore-preferences = { group = "androidx.datastore", name = "datasto
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExt" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
 
