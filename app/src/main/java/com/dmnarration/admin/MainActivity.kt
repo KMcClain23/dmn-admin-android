@@ -4,23 +4,45 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dmnarration.admin.data.AuthState
+import com.dmnarration.admin.domain.BoardCard
+import com.dmnarration.admin.ui.AppViewModel
+import com.dmnarration.admin.ui.auth.SignInScreen
+import com.dmnarration.admin.ui.board.BoardScreen
+import com.dmnarration.admin.ui.board.BoardViewModel
+import com.dmnarration.admin.ui.board.CardDetailSheet
 import com.dmnarration.admin.ui.theme.Background
 import com.dmnarration.admin.ui.theme.DmnAdminTheme
-import com.dmnarration.admin.ui.theme.ThemeProofScreen
+import com.dmnarration.admin.ui.theme.DmnTheme
+import com.dmnarration.admin.ui.theme.DmnType
 import dagger.hilt.android.AndroidEntryPoint
 
-/**
- * Single activity. Navigation lands here in 1.4 once there is more than one
- * screen to move between; right now it hosts the 1.3 theme proof so the design
- * system can be looked at on a real device before anything is built on it.
- */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,7 +51,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             DmnAdminTheme {
                 Surface(color = Background, modifier = Modifier.fillMaxSize()) {
-                    ThemeProofScreen(
+                    AppRoot(
                         Modifier
                             .windowInsetsPadding(WindowInsets.systemBars)
                             .consumeWindowInsets(WindowInsets.systemBars)
@@ -37,5 +59,92 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+/**
+ * The launch decision, in one place: a valid session AND a known role gets the
+ * board; anything else gets sign-in or an explanation. There is deliberately no
+ * fourth branch that lets an unresolved role through.
+ */
+@Composable
+private fun AppRoot(modifier: Modifier = Modifier) {
+    val app: AppViewModel = hiltViewModel()
+    val auth by app.state.collectAsStateWithLifecycle()
+    val signingIn by app.signingIn.collectAsStateWithLifecycle()
+    val signInError by app.signInError.collectAsStateWithLifecycle()
+
+    Box(modifier.fillMaxSize()) {
+        when (val s = auth) {
+            is AuthState.Loading -> Centered { CircularProgressIndicator(color = DmnTheme.colors.accentAmber) }
+
+            is AuthState.SignedOut -> SignInScreen(
+                signingIn = signingIn,
+                error = signInError,
+                onSignIn = app::signIn,
+            )
+
+            is AuthState.RoleUnavailable -> Centered {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        s.reason,
+                        style = DmnType.Body,
+                        color = DmnTheme.colors.alertRed,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp),
+                    )
+                    TextButton(onClick = app::dismissRoleError) {
+                        Text("Back to sign in", color = DmnTheme.colors.accentAmber)
+                    }
+                }
+            }
+
+            is AuthState.SignedIn -> BoardRoute(role = s.role, onSignOut = app::signOut)
+        }
+    }
+}
+
+@Composable
+private fun BoardRoute(
+    role: com.dmnarration.admin.domain.UserRole,
+    onSignOut: () -> Unit,
+) {
+    val vm: BoardViewModel = hiltViewModel()
+    val state by vm.state.collectAsStateWithLifecycle()
+    var selected by remember { mutableStateOf<BoardCard?>(null) }
+
+    LaunchedEffect(role) { vm.start(role) }
+
+    BoardScreen(
+        state = state,
+        onRefresh = vm::refresh,
+        onToggleFilter = vm::setDateFilter,
+        onOpenCard = { selected = it },
+        onSignOut = onSignOut,
+    )
+
+    selected?.let { card ->
+        CardDetailSheet(
+            card = card,
+            capabilities = state.capabilities,
+            settings = state.settings,
+            today = state.today,
+            onDismiss = { selected = null },
+        )
+    }
+}
+
+@Composable
+private fun Centered(content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Background),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) { content() }
     }
 }

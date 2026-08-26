@@ -41,6 +41,30 @@ class BoardFiltersTest {
         assertEquals(PipelineBucket.LATER, pipelineBucketFor(card(deadline = "2026-09-25"), today)) // 31
     }
 
+    @Test fun `the same card buckets differently as today moves`() {
+        // The regression guard for a frozen `today`. If a ViewModel ever holds
+        // `val today = currentDay()` instead of deriving it per load, every
+        // bucket and urgency colour freezes at whatever day the app launched,
+        // and a board left open overnight quietly lies. One card, four days.
+        val due = card(deadline = "2026-09-24")
+
+        assertEquals(PipelineBucket.LATER,
+            pipelineBucketFor(due, LocalDate.parse("2026-08-24")))   // 31 days
+        assertEquals(PipelineBucket.THIS_MONTH,
+            pipelineBucketFor(due, LocalDate.parse("2026-08-25")))   // 30 — the boundary
+        assertEquals(PipelineBucket.THIS_WEEK,
+            pipelineBucketFor(due, LocalDate.parse("2026-09-17")))   // 7
+        assertEquals(PipelineBucket.THIS_WEEK,
+            pipelineBucketFor(due, LocalDate.parse("2026-09-30")))   // -6, overdue
+    }
+
+    @Test fun `urgency also moves with today, not just bucketing`() {
+        val deadline = LocalDate.parse("2026-09-24")
+        assertEquals(Urgency.DEFAULT, completionUrgency(daysUntil(deadline, LocalDate.parse("2026-08-24"))))
+        assertEquals(Urgency.YELLOW, completionUrgency(daysUntil(deadline, LocalDate.parse("2026-08-25"))))
+        assertEquals(Urgency.RED, completionUrgency(daysUntil(deadline, LocalDate.parse("2026-09-20"))))
+    }
+
     // ─── compareCards ───────────────────────────────────────────────────────
 
     @Test fun `earlier deadlines lead and undated cards trail`() {
