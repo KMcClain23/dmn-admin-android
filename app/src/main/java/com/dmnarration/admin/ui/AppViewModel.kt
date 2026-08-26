@@ -45,6 +45,16 @@ class AppViewModel @Inject constructor(
     private suspend fun restore() {
         _state.value = AuthState.Loading
         val status = sessions.awaitInitialised()
+        if (status == null) {
+            // The restore did not settle in time, which offline it often does
+            // not. That is a network answer and not an authentication one, so
+            // it lands where every other network answer lands: session kept,
+            // retry offered, nobody signed out.
+            _state.value = AuthState.RoleCheckFailed(
+                "No connection. Check your network and try again."
+            )
+            return
+        }
         if (status !is SessionStatus.Authenticated) {
             _state.value = AuthState.SignedOut
             return

@@ -76,7 +76,19 @@ private fun AppRoot(modifier: Modifier = Modifier) {
 
     Box(modifier.fillMaxSize()) {
         when (val s = auth) {
-            is AuthState.Loading -> Centered { CircularProgressIndicator(color = DmnTheme.colors.accentAmber) }
+            // Labelled even when it is fast. A spinner that says nothing is
+            // indistinguishable from a hang, and this is the first thing the
+            // app does — the one moment a user has no other evidence that it
+            // is working.
+            is AuthState.Loading -> Centered {
+                CircularProgressIndicator(color = DmnTheme.colors.accentAmber)
+                Text(
+                    "Restoring session…",
+                    style = DmnType.Small,
+                    color = DmnTheme.colors.textMuted,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
 
             is AuthState.SignedOut -> SignInScreen(
                 signingIn = signingIn,

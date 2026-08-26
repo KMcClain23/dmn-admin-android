@@ -9,8 +9,11 @@ import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * The profile row is absent or unusable — a fact about this account.
@@ -56,9 +59,19 @@ class SessionRepository @Inject constructor(
     private val client: SupabaseClient,
 ) {
 
-    /** Waits for supabase-kt to finish restoring any stored session. */
-    suspend fun awaitInitialised(): SessionStatus =
-        client.auth.sessionStatus.first { it !is SessionStatus.Initializing }
+    /**
+     * Waits for supabase-kt to finish restoring any stored session, but not
+     * forever.
+     *
+     * Offline the restore retries its token refresh, and the status can sit at
+     * Initializing for half a minute. Null here means "it did not settle in
+     * time", which is a network answer, not an authentication one — the caller
+     * routes it to the same retryable state a failed role fetch produces.
+     */
+    suspend fun awaitInitialised(timeout: Duration = 10.seconds): SessionStatus? =
+        withTimeoutOrNull(timeout) {
+            client.auth.sessionStatus.first { it !is SessionStatus.Initializing }
+        }
 
     val currentEmail: String? get() = client.auth.currentUserOrNull()?.email
 
@@ -69,9 +82,21 @@ class SessionRepository @Inject constructor(
         }
     }
 
+    /**
+     * Best effort on the server, unconditional on the device.
+     *
+     * Revoking the refresh token needs the network and can fail; discarding the
+     * copy on this phone cannot and must not. Previously this only called
+     * signOut(), so an offline sign-out reported itself done while leaving the
+     * session on disk — the app said "you have been signed out" and a relaunch
+     * walked straight back onto the board. clearSession() drops the in-memory
+     * session and the stored one whatever the server said.
+     */
     suspend fun signOut() {
         runCatching { client.auth.signOut() }
-            .onFailure { Log.w(TAG, "sign-out failed locally", it) }
+            .onFailure { Log.w(TAG, "could not revoke the session server-side", it) }
+        runCatching { client.auth.clearSession() }
+            .onFailure { Log.e(TAG, "could not clear the local session", it) }
     }
 
     /**
