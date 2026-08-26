@@ -12,6 +12,17 @@ import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * The profile row is absent or unusable — a fact about this account.
+ *
+ * Deliberately its own type so it can be told apart from a request that never
+ * arrived. "There is no row for you" and "I could not reach the server to ask"
+ * are opposite situations: the first means the session's permissions are
+ * genuinely unknowable and it must not be used, the second means nothing at all
+ * about permissions and must not cost anyone their session.
+ */
+class ProfileUnusableException(message: String) : Exception(message)
+
 /** What the app knows about who is signed in. */
 sealed interface AuthState {
     data object Loading : AuthState
@@ -19,6 +30,12 @@ sealed interface AuthState {
     data class SignedIn(val role: UserRole, val email: String?) : AuthState
     /** Signed in, but the role could not be established. Fails closed. */
     data class RoleUnavailable(val reason: String) : AuthState
+    /**
+     * Signed in, session intact, but the role could not be fetched — almost
+     * always the network. Retryable, and explicitly NOT a sign-out: being on a
+     * train must not cost you your credentials.
+     */
+    data class RoleCheckFailed(val reason: String) : AuthState
 }
 
 /**
@@ -68,7 +85,7 @@ class SessionRepository @Inject constructor(
      */
     suspend fun loadRole(): Result<UserRole> = runCatching {
         val userId = client.auth.currentUserOrNull()?.id
-            ?: error("no signed-in user")
+            ?: throw ProfileUnusableException("no signed-in user")
 
         val rows = client.from("profiles")
             .select(Columns.raw("id, role, display_name")) {
@@ -76,7 +93,11 @@ class SessionRepository @Inject constructor(
             }
             .decodeList<ProfileDto>()
 
-        val row = rows.firstOrNull() ?: error("no profile row for this user")
+        // Reached only when the request itself succeeded, so an empty result
+        // really does mean there is no row — which happened for real in Stage 0,
+        // when the admin user was created before the provisioning trigger.
+        val row = rows.firstOrNull()
+            ?: throw ProfileUnusableException("no profile row for this user")
         UserRole.fromStored(row.role)
     }
 

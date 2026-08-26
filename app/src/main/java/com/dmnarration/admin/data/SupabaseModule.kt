@@ -12,6 +12,7 @@ import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import javax.inject.Singleton
+import kotlin.time.Duration.Companion.seconds
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -32,6 +33,12 @@ object SupabaseModule {
             supabaseUrl = BuildConfig.SUPABASE_URL,
             supabaseKey = BuildConfig.SUPABASE_ANON_KEY,
         ) {
+            // Finding 1: without this, an offline request sat for about 27
+            // seconds before surfacing anything. Half a minute of spinner is a
+            // bug in everything but name, and the board is small enough that
+            // ten seconds is generous for a request that is going to succeed.
+            requestTimeout = 10.seconds
+
             install(Auth) {
                 sessionManager = EncryptedSessionManager(context)
                 alwaysAutoRefresh = true

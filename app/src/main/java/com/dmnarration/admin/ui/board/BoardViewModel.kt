@@ -123,16 +123,22 @@ class BoardViewModel @Inject constructor(
                     reproject()
                 }
                 .onFailure { t ->
-                    allCards = emptyList()
+                    // Deliberately keeps allCards and the buckets. A failed
+                    // refresh is the app not knowing anything new, not the
+                    // board becoming empty — dropping twenty good cards
+                    // because a pull timed out is a worse answer than showing
+                    // them with a note. There is no security argument for
+                    // clearing either: a revoked session is not a failure, it
+                    // is a successful fetch that returns nothing (RLS answers
+                    // 200 with an empty list), which the success path below
+                    // handles by replacing state honestly. The boundary is the
+                    // server, and someone who has lost access can simply not
+                    // pull.
                     _state.value = _state.value.copy(
                         loading = false,
                         refreshing = false,
                         settings = settings,
                         error = describe(t),
-                        pipeline = emptyMap(),
-                        production = emptyMap(),
-                        pipelineCount = 0,
-                        productionCount = 0,
                     )
                 }
         }

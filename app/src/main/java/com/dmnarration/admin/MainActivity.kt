@@ -99,6 +99,32 @@ private fun AppRoot(modifier: Modifier = Modifier) {
                 }
             }
 
+            // Session intact — the role just could not be fetched. Retry, or
+            // leave deliberately; nobody is signed out for being offline.
+            is AuthState.RoleCheckFailed -> Centered {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        s.reason,
+                        style = DmnType.Body,
+                        color = DmnTheme.colors.alertRed,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp),
+                    )
+                    Text(
+                        "You are still signed in.",
+                        style = DmnType.Small,
+                        color = DmnTheme.colors.textMuted,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    TextButton(onClick = app::retryRoleCheck) {
+                        Text("Try again", color = DmnTheme.colors.accentAmber)
+                    }
+                    TextButton(onClick = app::signOut) {
+                        Text("Sign out", color = DmnTheme.colors.textMuted)
+                    }
+                }
+            }
+
             is AuthState.SignedIn -> BoardRoute(role = s.role, onSignOut = app::signOut)
         }
     }

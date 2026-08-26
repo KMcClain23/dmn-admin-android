@@ -3,6 +3,7 @@ package com.dmnarration.admin.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dmnarration.admin.data.AuthState
+import com.dmnarration.admin.data.ProfileUnusableException
 import com.dmnarration.admin.data.SessionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -19,6 +20,9 @@ import javax.inject.Inject
  * between launches, and a failure to load it signs the user out. A session
  * whose permissions are unknown must not reach the board — `UserRole.UNKNOWN`
  * grants nothing and shows an error instead.
+ *
+ * "Could not be read" and "could not be asked" are different, though, and only
+ * the first is grounds for signing anyone out.
  */
 @HiltViewModel
 class AppViewModel @Inject constructor(
@@ -59,12 +63,22 @@ class AppViewModel @Inject constructor(
      */
     private suspend fun resolveRole() {
         val result = sessions.loadRole()
-        val role = result.getOrElse {
-            sessions.signOut()
-            _state.value = AuthState.RoleUnavailable(
-                "Signed in, but your profile could not be read, so the app cannot tell " +
-                    "what you are allowed to see. You have been signed out."
-            )
+        val role = result.getOrElse { failure ->
+            if (failure is ProfileUnusableException) {
+                // A real fact about this account: there is no usable profile, so
+                // the session's permissions are unknowable and it must not be
+                // used. This is the case item 14 was written for.
+                sessions.signOut()
+                _state.value = AuthState.RoleUnavailable(
+                    "Signed in, but your profile could not be read, so the app cannot tell " +
+                        "what you are allowed to see. You have been signed out."
+                )
+            } else {
+                // The request never landed. That says nothing whatsoever about
+                // permissions, and signing out here would mean opening the app
+                // in a lift costs you a valid session and a re-typed password.
+                _state.value = AuthState.RoleCheckFailed(describe(failure))
+            }
             return
         }
         if (!role.isRecognised) {
@@ -95,6 +109,14 @@ class AppViewModel @Inject constructor(
             sessions.signOut()
             _signInError.value = null
             _state.value = AuthState.SignedOut
+        }
+    }
+
+    /** Try the role fetch again, keeping the session. */
+    fun retryRoleCheck() {
+        viewModelScope.launch {
+            _state.value = AuthState.Loading
+            resolveRole()
         }
     }
 
