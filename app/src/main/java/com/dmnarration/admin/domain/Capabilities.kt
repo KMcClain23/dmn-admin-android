@@ -53,6 +53,16 @@ data class Capabilities(
     val canViewStudioSettings: Boolean,
     val canViewConfidentialCovers: Boolean,
     val canEdit: Boolean,
+    /**
+     * Whether the "Edit on web" escape hatch is worth offering.
+     *
+     * Its referent is F2, not F3. The web admin authenticates with one shared
+     * secret and reads everything through the service-role key — it has no
+     * concept of users at all — so an editor cannot use it even after F3 grants
+     * them the board here. This stays false for them until that migration
+     * happens, which is a different question from whether they may edit.
+     */
+    val canUseWebAdmin: Boolean,
 ) {
     companion object {
         fun of(role: UserRole): Capabilities = when (role) {
@@ -61,18 +71,21 @@ data class Capabilities(
                 canViewStudioSettings = true,
                 canViewConfidentialCovers = true,
                 canEdit = false,
+                canUseWebAdmin = true,
             )
             UserRole.EDITOR -> Capabilities(
                 canViewFinancials = false,
                 canViewStudioSettings = false,
                 canViewConfidentialCovers = false,
                 canEdit = false,
+                canUseWebAdmin = false,
             )
             UserRole.UNKNOWN -> Capabilities(
                 canViewFinancials = false,
                 canViewStudioSettings = false,
                 canViewConfidentialCovers = false,
                 canEdit = false,
+                canUseWebAdmin = false,
             )
         }
     }

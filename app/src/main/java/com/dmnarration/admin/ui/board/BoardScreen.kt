@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -261,7 +263,13 @@ private fun ShimmerList() {
         animationSpec = infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse),
         label = "shimmerAlpha",
     )
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         repeat(4) {
             Box(
                 Modifier
@@ -276,10 +284,27 @@ private fun ShimmerList() {
     }
 }
 
+/**
+ * A LazyColumn holding one full-height item, not a Box.
+ *
+ * PullToRefreshBox detects the gesture through nested scroll, so it needs a
+ * scrollable descendant to hear it. With a plain Box here the empty board could
+ * not be pulled at all — which is precisely the state you are in after a
+ * permission change empties the list, and precisely when you most need to
+ * retry. The only way out was to kill the app.
+ */
 @Composable
 private fun EmptyBoard() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("No active projects", style = DmnType.Body, color = DmnTheme.colors.textMuted)
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            Box(
+                Modifier
+                    .fillParentMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("No active projects", style = DmnType.Body, color = DmnTheme.colors.textMuted)
+            }
+        }
     }
 }
 

@@ -20,6 +20,15 @@ import kotlin.time.Clock
  *
  * So call this once per load, store the result in the emitted state, and let
  * pull-to-refresh correct any staleness. That is the accepted bound for v1.
+ *
+ * The zone is the device's, never UTC, and that is not a detail. Dean is at
+ * UTC-7: from 17:00 local until midnight the UTC date is already tomorrow, so a
+ * UTC-derived "today" would be right for seventeen hours a day and silently a
+ * day ahead for the other seven — shifting every urgency colour and every
+ * bucket one step early, every evening. The clock is a parameter only so that
+ * can be pinned in a test.
  */
-fun currentDay(timeZone: TimeZone = TimeZone.currentSystemDefault()): LocalDate =
-    Clock.System.now().toLocalDateTime(timeZone).date
+fun currentDay(
+    timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    clock: Clock = Clock.System,
+): LocalDate = clock.now().toLocalDateTime(timeZone).date

@@ -158,9 +158,10 @@ fun CardDetailSheet(
                 DetailRow("Estimated", earnings?.let { "~$${"%,d".format(it.roundToLong())}" } ?: "—")
             }
 
-            // Stage 1 writes nothing, so the escape hatch is the web. Shown only
-            // to a session that could actually use it.
-            if (capabilities.canViewFinancials) {
+            // Stage 1 writes nothing, so the escape hatch is the web. Gated on
+            // being able to use that web admin at all, which is its own
+            // question — not borrowed from whether earnings are visible.
+            if (capabilities.canUseWebAdmin) {
                 Spacer(Modifier.height(24.dp))
                 TextButton(
                     onClick = {
