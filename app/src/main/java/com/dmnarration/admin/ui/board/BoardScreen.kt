@@ -186,54 +186,45 @@ fun BoardScreen(
             ErrorBanner(state.error)
         }
 
-        PullToRefreshBox(
+        PullToRefreshSurface(
             isRefreshing = state.refreshing,
             onRefresh = onRefresh,
-            state = rememberPullToRefreshState(),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            when {
-                state.loading -> ShimmerList()
-                state.isEmpty && state.error == null -> EmptyBoard()
-                // Nothing to show and something to say: the banner is the
-                // whole answer. Falling through to the pager here rendered
-                // "no books" under every bucket heading, which reads as an
-                // empty board — the same false impression EmptyBoard is
-                // withheld to avoid, just spelled differently.
+            content = when {
+                state.loading -> shimmerContent()
+                state.isEmpty && state.error == null -> emptyBoardContent()
+                // Nothing to show and something to say: the banner is the whole
+                // answer. Falling through to the pager here rendered "no books"
+                // under every bucket heading, which reads as an empty board —
+                // the same false impression EmptyBoard is withheld to avoid,
+                // just spelled differently.
                 //
-                // An empty LazyColumn rather than nothing at all. PullToRefresh
-                // drives off nested scroll, so content that does not scroll
-                // cannot be pulled: rendering nothing here stranded a refused
-                // session on this screen with no way back short of restarting
-                // the app. This scrolls, and says nothing.
-                state.isEmpty -> LazyColumn(modifier = Modifier.fillMaxSize()) {}
-                else -> HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    if (page == 0) {
-                        SectionList(
-                            sections = PipelineBucket.entries.map {
-                                PIPELINE_LABELS.getValue(it) to state.pipeline[it].orEmpty()
-                            },
-                            state = state,
-                            onOpenCard = onOpenCard,
-                            onToggleFirst15 = onToggleFirst15,
-                            onLongPress = { actionCard = it },
-                            onSwipeArchive = { archiveCard = it },
-                        )
+                // `blank()` rather than nothing at all, and it is now the only
+                // way to say "nothing": rendering nothing left PullToRefresh
+                // with no nested-scroll participant and stranded a refused
+                // session here with no way back short of restarting the app.
+                // ScrollableContent exists so that mistake is a type error.
+                state.isEmpty -> ScrollableContent.blank()
+                else -> ScrollableContent.pager(pagerState) { page ->
+                    val sections = if (page == 0) {
+                        PipelineBucket.entries.map {
+                            PIPELINE_LABELS.getValue(it) to state.pipeline[it].orEmpty()
+                        }
                     } else {
-                        SectionList(
-                            sections = ProductionSubgroup.entries.map {
-                                PRODUCTION_LABELS.getValue(it) to state.production[it].orEmpty()
-                            },
-                            state = state,
-                            onOpenCard = onOpenCard,
-                            onToggleFirst15 = onToggleFirst15,
-                            onLongPress = { actionCard = it },
-                            onSwipeArchive = { archiveCard = it },
-                        )
+                        ProductionSubgroup.entries.map {
+                            PRODUCTION_LABELS.getValue(it) to state.production[it].orEmpty()
+                        }
                     }
+                    SectionList(
+                        sections = sections,
+                        state = state,
+                        onOpenCard = onOpenCard,
+                        onToggleFirst15 = onToggleFirst15,
+                        onLongPress = { actionCard = it },
+                        onSwipeArchive = { archiveCard = it },
+                    )
                 }
-            }
-        }
+            },
+        )
     }
 }
 
@@ -327,9 +318,14 @@ private fun SectionHeader(label: String) {
  * The web uses a spinner because it was cheap. On a phone the board is the
  * whole app, and a shape that matches what is coming reads as loading rather
  * than as waiting.
+ *
+ * Returned as ScrollableContent rather than rendered directly. It scrolled
+ * before too — but by the author remembering to, which is the dependency the
+ * type removes.
  */
-@Composable
-private fun ShimmerList() {
+private fun shimmerContent() = ScrollableContent.column(
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+) {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val alpha by transition.animateFloat(
         initialValue = 0.35f,
@@ -337,47 +333,27 @@ private fun ShimmerList() {
         animationSpec = infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse),
         label = "shimmerAlpha",
     )
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        repeat(4) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(CARD_HEIGHT)
-                    .clip(RoundedCornerShape(8.dp))
-                    .alpha(alpha)
-                    .background(Surface)
-                    .border(1.dp, SurfaceBorder, RoundedCornerShape(8.dp))
-            )
-        }
+    repeat(4) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(CARD_HEIGHT)
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .alpha(alpha)
+                .background(Surface)
+                .border(1.dp, SurfaceBorder, RoundedCornerShape(8.dp))
+        )
     }
 }
 
-/**
- * A LazyColumn holding one full-height item, not a Box.
- *
- * PullToRefreshBox detects the gesture through nested scroll, so it needs a
- * scrollable descendant to hear it. With a plain Box here the empty board could
- * not be pulled at all — which is precisely the state you are in after a
- * permission change empties the list, and precisely when you most need to
- * retry. The only way out was to kill the app.
- */
-@Composable
-private fun EmptyBoard() {
-    LazyColumn(Modifier.fillMaxSize()) {
-        item {
-            Box(
-                Modifier
-                    .fillParentMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("No active projects", style = DmnType.Body, color = DmnTheme.colors.textMuted)
-            }
+private fun emptyBoardContent() = ScrollableContent.list {
+    item {
+        Box(
+            Modifier.fillParentMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("No active projects", style = DmnType.Body, color = DmnTheme.colors.textMuted)
         }
     }
 }

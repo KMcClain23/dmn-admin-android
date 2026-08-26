@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
@@ -34,6 +33,7 @@ import com.dmnarration.admin.domain.ArchiveReason
 import com.dmnarration.admin.domain.BoardAction
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.actionsFor
+import com.dmnarration.admin.ui.components.DmnTextField
 import com.dmnarration.admin.ui.theme.AlertRed
 import com.dmnarration.admin.ui.theme.Background
 import com.dmnarration.admin.ui.theme.DmnTheme
@@ -161,11 +161,14 @@ fun ArchiveConfirmDialog(
                         Text(r.label, style = DmnType.Body, color = DmnTheme.colors.textBody)
                     }
                 }
-                OutlinedTextField(
+                DmnTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    placeholder = { Text("Notes (optional)…", style = DmnType.Body, color = DmnTheme.colors.textDim) },
-                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Notes (optional)…",
+                    singleLine = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
                 )
             }
         },
