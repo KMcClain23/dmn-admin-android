@@ -48,7 +48,6 @@ import com.dmnarration.admin.ui.AppViewModel
 import com.dmnarration.admin.ui.auth.SignInScreen
 import com.dmnarration.admin.ui.board.BoardScreen
 import com.dmnarration.admin.ui.board.BoardViewModel
-import com.dmnarration.admin.ui.board.CardDetailSheet
 import com.dmnarration.admin.ui.theme.Background
 import com.dmnarration.admin.ui.theme.DmnAdminTheme
 import com.dmnarration.admin.ui.theme.DmnTheme

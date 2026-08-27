@@ -5,6 +5,7 @@ import com.dmnarration.admin.data.SignOutOutcome
 import com.dmnarration.admin.data.StoredSession
 import com.dmnarration.admin.data.notAuthenticatedState
 import com.dmnarration.admin.data.signOutMessage
+import kotlinx.datetime.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -107,6 +108,93 @@ class FailureVisibilityTest {
         for (stored in StoredSession.entries) {
             assertEquals(SessionState.NeedsSignIn, notAuthenticatedState(isSignOut = true, stored = stored))
         }
+    }
+
+
+    // ─── the two rates fail independently ───────────────────────────────────
+
+    private val liveRows = mapOf(
+        SettingKeys.WORDS_PER_NARRATION_HOUR to "5000",
+        SettingKeys.WORDS_PER_FINISHED_HOUR to "9400",
+        SettingKeys.DAILY_CAPACITY_HOURS to "6",
+        SettingKeys.MAX_BOOKS_PER_DAY to "2",
+        SettingKeys.HEAVY_DAY_HOURS to "4",
+    )
+
+    private fun plan(settings: StudioSettings) = narrationPlan(
+        NarrationInput(
+            wordCount = 92_000,
+            narrationFormat = "solo",
+            narratorSharePercent = null,
+            deadline = LocalDate.parse("2026-09-30"),
+            wordsPerNarrationHour = settings.wordsPerNarrationHour,
+            wordsRecorded = 0,
+            today = LocalDate.parse("2026-08-26"),
+        ),
+    )
+
+    private fun earnings(settings: StudioSettings) = settings.wordsPerFinishedHour?.let {
+        estimatedEarnings(
+            wordCount = 92_000,
+            pfhRate = 240.0,
+            paymentType = "pfh",
+            narrationFormat = "solo",
+            narratorSharePercent = null,
+            wordsPerFinishedHour = it,
+        )
+    }
+
+    /**
+     * THREE states, not two. A whole-read failure blanks both; a bad narration rate
+     * blanks the booth figures only; a bad finished rate blanks the money only.
+     * Collapsing any pair hides information that is genuinely known.
+     */
+    @Test fun `the two rates blank independently`() {
+        val benign = studioSettingsFrom(liveRows).settings
+        val readFailed = StudioSettings(null, null, null, null, null)
+        val narrationBad = studioSettingsFrom(liveRows + (SettingKeys.WORDS_PER_NARRATION_HOUR to "500000")).settings
+        val finishedBad = studioSettingsFrom(liveRows + (SettingKeys.WORDS_PER_FINISHED_HOUR to "nonsense")).settings
+
+        // benign: both figures available
+        assertNotNull("benign hours", plan(benign))
+        assertNotNull("benign earnings", earnings(benign))
+
+        // whole read failed: neither
+        assertNull("no rates, no hours", plan(readFailed))
+        assertNull("no rates, no earnings", earnings(readFailed))
+
+        // narration rate bad: hours gone, MONEY SURVIVES
+        assertNull("a bad narration rate blanks the booth figures", plan(narrationBad))
+        assertNotNull("but the money is still fully known", earnings(narrationBad))
+
+        // finished rate bad: money gone, HOURS SURVIVE
+        assertNotNull("a bad finished rate leaves the booth figures alone", plan(finishedBad))
+        assertNull("but the money cannot be computed", earnings(finishedBad))
+    }
+
+    /** The three failures are distinguishable from one another, not just from benign. */
+    @Test fun `the three failure states do not collapse into two`() {
+        val readFailed = StudioSettings(null, null, null, null, null)
+        val narrationBad = studioSettingsFrom(liveRows + (SettingKeys.WORDS_PER_NARRATION_HOUR to "500000")).settings
+        val finishedBad = studioSettingsFrom(liveRows + (SettingKeys.WORDS_PER_FINISHED_HOUR to "nonsense")).settings
+
+        fun shape(s: StudioSettings) = (plan(s) != null) to (earnings(s) != null)
+
+        assertEquals(false to false, shape(readFailed))
+        assertEquals(false to true, shape(narrationBad))
+        assertEquals(true to false, shape(finishedBad))
+        assertNotEquals(shape(narrationBad), shape(finishedBad))
+        assertNotEquals(shape(narrationBad), shape(readFailed))
+        assertNotEquals(shape(finishedBad), shape(readFailed))
+    }
+
+    /** An out-of-range value must be reported, not silently replaced. */
+    @Test fun `a rejected value is visible against its key`() {
+        val read = studioSettingsFrom(liveRows + (SettingKeys.WORDS_PER_NARRATION_HOUR to "500000"))
+        val issue = read.issueFor(SettingKeys.WORDS_PER_NARRATION_HOUR)
+        assertNotNull("the rejection must reach the screen", issue)
+        assertTrue(issue is SettingIssue.OutOfRange)
+        assertEquals("500000", (issue as SettingIssue.OutOfRange).raw)
     }
 
 }

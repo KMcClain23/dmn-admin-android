@@ -17,7 +17,8 @@ data class SiteSettings(
     /** The raw stored value, so an unreadable one can be shown rather than hidden. */
     val availableMonthsRaw: String?,
     val acceptingProjectsRaw: String?,
-    val studio: StudioSettings,
+    /** The studio numbers AND what could not be read, per key. */
+    val studio: StudioSettingsRead,
 )
 
 /**

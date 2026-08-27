@@ -299,31 +299,61 @@ class BoardMathTest {
 
     // ─── studio settings ────────────────────────────────────────────────────
 
-    @Test fun `settings come from rows, defaults only fill gaps`() {
-        val s = studioSettingsFrom(
+    /*
+     * These three used to assert that a missing, unreadable or out-of-range setting
+     * FELL BACK to a default. That is the behaviour removed on 27 August 2026: the
+     * narration rate's default is 9,200 against a live 5,000, so falling back
+     * under-reported every booth figure by roughly 46% with plausible-looking numbers
+     * and no indication. They now assert the opposite contract — null, plus an issue
+     * naming the key — so the old behaviour cannot return without one of them failing.
+     */
+
+    @Test fun `a good value is read and reported without issue`() {
+        val read = studioSettingsFrom(
             mapOf(
                 SettingKeys.WORDS_PER_NARRATION_HOUR to "5000",
                 SettingKeys.WORDS_PER_FINISHED_HOUR to "9400",
             )
         )
-        assertEquals(5000, s.wordsPerNarrationHour)
-        assertEquals(9400, s.wordsPerFinishedHour)
-        assertEquals(DEFAULT_STUDIO_SETTINGS.heavyDayHours, s.heavyDayHours, 1e-9)
+        assertEquals(5000, read.settings.wordsPerNarrationHour)
+        assertEquals(9400, read.settings.wordsPerFinishedHour)
+        assertNull(read.issueFor(SettingKeys.WORDS_PER_NARRATION_HOUR))
     }
 
-    @Test fun `an out-of-range or unparseable setting falls back rather than dividing by zero`() {
-        val s = studioSettingsFrom(
-            mapOf(
-                SettingKeys.WORDS_PER_NARRATION_HOUR to "0",
-                SettingKeys.WORDS_PER_FINISHED_HOUR to "not a number",
-            )
-        )
-        assertEquals(DEFAULT_STUDIO_SETTINGS.wordsPerNarrationHour, s.wordsPerNarrationHour)
-        assertEquals(DEFAULT_STUDIO_SETTINGS.wordsPerFinishedHour, s.wordsPerFinishedHour)
+    @Test fun `a missing key is null and says which key`() {
+        val read = studioSettingsFrom(mapOf(SettingKeys.WORDS_PER_NARRATION_HOUR to "5000"))
+        assertNull("never a default", read.settings.heavyDayHours)
+        val issue = read.issueFor(SettingKeys.HEAVY_DAY_HOURS)
+        assertTrue(issue is SettingIssue.Missing)
     }
 
-    @Test fun `no rows at all gives the documented defaults`() =
-        assertEquals(DEFAULT_STUDIO_SETTINGS, studioSettingsFrom(emptyMap()))
+    @Test fun `an unreadable value is null and carries what was stored`() {
+        val read = studioSettingsFrom(mapOf(SettingKeys.WORDS_PER_FINISHED_HOUR to "not a number"))
+        assertNull(read.settings.wordsPerFinishedHour)
+        val issue = read.issueFor(SettingKeys.WORDS_PER_FINISHED_HOUR)
+        assertTrue(issue is SettingIssue.Unreadable)
+        assertEquals("not a number", (issue as SettingIssue.Unreadable).raw)
+    }
+
+    /** The W1 disease exactly: a typo'd number silently becoming a different one. */
+    @Test fun `an out-of-range value is null and reports the value and the bounds`() {
+        val read = studioSettingsFrom(mapOf(SettingKeys.WORDS_PER_NARRATION_HOUR to "500000"))
+        assertNull("500000 must not silently become 9200", read.settings.wordsPerNarrationHour)
+        val issue = read.issueFor(SettingKeys.WORDS_PER_NARRATION_HOUR)
+        assertTrue(issue is SettingIssue.OutOfRange)
+        assertEquals("500000", (issue as SettingIssue.OutOfRange).raw)
+        assertEquals("1000–30000", issue.allowed)
+    }
+
+    @Test fun `no rows at all yields all nulls and an issue for every key`() {
+        val read = studioSettingsFrom(emptyMap())
+        assertNull(read.settings.wordsPerNarrationHour)
+        assertNull(read.settings.wordsPerFinishedHour)
+        assertNull(read.settings.dailyCapacityHours)
+        assertNull(read.settings.maxBooksPerDay)
+        assertNull(read.settings.heavyDayHours)
+        assertEquals(5, read.issues.size)
+    }
 }
 
 /** Shared card builder for the filter tests. */

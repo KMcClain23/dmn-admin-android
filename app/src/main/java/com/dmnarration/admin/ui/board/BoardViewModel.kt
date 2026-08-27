@@ -163,7 +163,10 @@ class BoardViewModel @Inject constructor(
             } else {
                 null
             }
-            val settings = site?.studio ?: DEFAULT_STUDIO_SETTINGS
+            // No fallback. A read that failed leaves every field null, so each
+            // derived figure blanks itself and everything else renders as usual.
+            val settings = site?.studio?.settings
+                ?: StudioSettings(null, null, null, null, null)
 
             board.loadBoard()
                 .onSuccess { cards ->

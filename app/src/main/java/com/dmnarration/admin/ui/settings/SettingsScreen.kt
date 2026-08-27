@@ -11,6 +11,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.dmnarration.admin.domain.SettingIssue
+import com.dmnarration.admin.domain.SettingKeys
 import com.dmnarration.admin.domain.SiteSettings
 import com.dmnarration.admin.domain.acceptingProjectsLabel
 import com.dmnarration.admin.domain.availableMonthsLabel
@@ -104,14 +106,16 @@ private fun LazyListScope.body(s: SiteSettings) {
              * and had already drifted once". The labels carry the distinction rather
              * than the key names, which differ only in the middle word.
              */
-            Setting(
+            SettingRow(
                 "Words per hour at the mic",
-                "${s.studio.wordsPerNarrationHour}",
+                s.studio.settings.wordsPerNarrationHour?.toString(),
+                s.studio.issueFor(SettingKeys.WORDS_PER_NARRATION_HOUR),
                 "Drives every TIME figure — hours at the mic, days needed, capacity.",
             )
-            Setting(
+            SettingRow(
                 "Words per finished hour",
-                "${s.studio.wordsPerFinishedHour}",
+                s.studio.settings.wordsPerFinishedHour?.toString(),
+                s.studio.issueFor(SettingKeys.WORDS_PER_FINISHED_HOUR),
                 "Drives every MONEY figure — earnings and PFH totals.",
             )
         }
@@ -119,9 +123,63 @@ private fun LazyListScope.body(s: SiteSettings) {
 
     item {
         Group("Capacity") {
-            Setting("A full day at the mic", "${s.studio.dailyCapacityHours} hrs")
-            Setting("A heavy day starts at", "${s.studio.heavyDayHours} hrs")
-            Setting("Books at the mic in one day", "${s.studio.maxBooksPerDay}")
+            SettingRow(
+                "A full day at the mic",
+                s.studio.settings.dailyCapacityHours?.let { "$it hrs" },
+                s.studio.issueFor(SettingKeys.DAILY_CAPACITY_HOURS),
+            )
+            SettingRow(
+                "A heavy day starts at",
+                s.studio.settings.heavyDayHours?.let { "$it hrs" },
+                s.studio.issueFor(SettingKeys.HEAVY_DAY_HOURS),
+            )
+            SettingRow(
+                "Books at the mic in one day",
+                s.studio.settings.maxBooksPerDay?.toString(),
+                s.studio.issueFor(SettingKeys.MAX_BOOKS_PER_DAY),
+            )
+        }
+    }
+}
+
+/**
+ * A setting, or why it could not be used.
+ *
+ * The rejection is shown against the offending value rather than the value being
+ * silently replaced. A typo'd 500000 quietly becoming 9,200 is precisely the disease
+ * W1 documents: a Settings page displaying a number the app does not use.
+ */
+@Composable
+private fun SettingRow(label: String, value: String?, issue: SettingIssue?, note: String? = null) {
+    val c = DmnTheme.colors
+    Column(Modifier.padding(bottom = 12.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Text(label, style = DmnType.Body, color = c.textMuted, modifier = Modifier.padding(end = 12.dp))
+            Text(
+                value ?: "Not usable",
+                style = DmnType.Numeric,
+                color = if (value == null) c.alertRed else c.textPrimary,
+            )
+        }
+        issue?.let {
+            Text(
+                when (it) {
+                    is SettingIssue.Missing -> "Not set in site_settings."
+                    is SettingIssue.Unreadable -> "Stored value \"${it.raw}\" is not a number."
+                    is SettingIssue.OutOfRange ->
+                        "Stored value \"${it.raw}\" is outside ${it.allowed} and is not being used."
+                },
+                style = DmnType.Small,
+                color = c.alertRed,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        note?.let {
+            Text(it, style = DmnType.Small, color = c.textDim, modifier = Modifier.padding(top = 2.dp))
         }
     }
 }

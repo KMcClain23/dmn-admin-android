@@ -7,6 +7,7 @@ import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.SettingKeys
 import com.dmnarration.admin.domain.SiteSettings
 import com.dmnarration.admin.domain.StudioSettings
+import com.dmnarration.admin.domain.StudioSettingsRead
 import com.dmnarration.admin.domain.studioSettingsFrom
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
@@ -191,7 +192,7 @@ internal fun Throwable.isCardAccessRefusal(): Boolean {
  * test of the ViewModel needs one that does not reach the network.
  */
 interface StudioSettingsRepository {
-    suspend fun load(): Result<StudioSettings>
+    suspend fun load(): Result<StudioSettingsRead>
 
     /**
      * Everything the table holds, for the Settings screen.
@@ -215,7 +216,7 @@ class SupabaseStudioSettingsRepository @Inject constructor(
         SettingKeys.HEAVY_DAY_HOURS,
     )
 
-    override suspend fun load(): Result<StudioSettings> = runCatching {
+    override suspend fun load(): Result<StudioSettingsRead> = runCatching {
         val rows = client.from("site_settings")
             .select(Columns.raw("key, value")) {
                 filter { isIn("key", keys) }

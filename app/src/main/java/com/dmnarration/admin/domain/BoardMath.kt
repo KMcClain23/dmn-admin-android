@@ -172,7 +172,8 @@ data class NarrationInput(
      * Required, and required on purpose — see the note on estimatedEarnings.
      * This is the TIME rate (words per hour at the mic), not the money one.
      */
-    val wordsPerNarrationHour: Int,
+    /** Required and NOT defaulted. Null or non-positive means no plan can be made. */
+    val wordsPerNarrationHour: Int?,
     val wordsRecorded: Int = 0,
     val schedule: RecordingSchedule = RecordingSchedule(),
     val today: LocalDate,
@@ -208,11 +209,12 @@ fun narrationPlan(input: NarrationInput): NarrationPlan? {
     if (wordCount == null || wordCount <= 0) return null
     val share = narratorShareOf(input.narrationFormat, input.narratorSharePercent) ?: return null
 
-    val rate = if (input.wordsPerNarrationHour > 0) {
-        input.wordsPerNarrationHour
-    } else {
-        DEFAULT_STUDIO_SETTINGS.wordsPerNarrationHour
-    }
+    // No default. StudioSettings' own comment claimed the consumers took this as a
+    // required parameter "rather than reading a default of their own" — while this
+    // read exactly such a default, silently answering at 9,200 against a live 5,000.
+    // A rate that is not known means the plan is not known.
+    val rate = input.wordsPerNarrationHour ?: return null
+    if (rate <= 0) return null
 
     val shareWords = wordCount * share
     // Clamped at both ends: a recorded figure larger than the share would

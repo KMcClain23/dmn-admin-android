@@ -344,17 +344,27 @@ fun BoardCardItem(
  * no computable figure — and "· ~$0" would be a plausible-looking lie that
  * reads as a data problem and gets investigated in entirely the wrong place.
  */
+/**
+ * Word count, with earnings appended only when they can actually be computed.
+ *
+ * The count itself is production information and never depends on a rate. The
+ * earnings suffix depends on `wordsPerFinishedHour`, so an unusable finished-hour
+ * setting drops the suffix and leaves the count — absent rather than defaulted.
+ */
 private fun wordsLine(card: BoardCard, capabilities: Capabilities, settings: StudioSettings): String {
     val words = card.wordCount ?: return " "
     val line = "${thousands(words.toLong())} words"
     if (!capabilities.canViewFinancials) return line
+    // Absent, not defaulted: without the finished-hour rate there is no honest
+    // earnings figure, and the word count is still perfectly good information.
+    val finishedRate = settings.wordsPerFinishedHour ?: return line
     val earnings = estimatedEarnings(
         wordCount = card.wordCount,
         pfhRate = card.pfhRate,
         paymentType = card.paymentType,
         narrationFormat = card.narrationFormat,
         narratorSharePercent = card.narratorSharePercent,
-        wordsPerFinishedHour = settings.wordsPerFinishedHour,
+        wordsPerFinishedHour = finishedRate,
     ) ?: return line
     return "$line · ~$${thousands(earnings.roundToLong())}"
 }
@@ -412,7 +422,11 @@ private fun BoothLoadRow(card: BoardCard, settings: StudioSettings, today: Local
             plan.hoursPerDay != null -> Text(
                 " · %.1f hrs/day".format(plan.hoursPerDay),
                 style = DmnType.Small,
-                color = if (plan.hoursPerDay >= settings.heavyDayHours) c.accentAmberBright else c.textMuted,
+                // A heavy day cannot be judged without the threshold, so the figure
+                // renders plainly rather than being coloured against a guess.
+                color = settings.heavyDayHours
+                    ?.let { if (plan.hoursPerDay >= it) c.accentAmberBright else c.textMuted }
+                    ?: c.textMuted,
             )
         }
     }

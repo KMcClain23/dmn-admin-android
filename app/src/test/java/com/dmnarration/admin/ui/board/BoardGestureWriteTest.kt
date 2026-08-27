@@ -75,7 +75,8 @@ class BoardGestureWriteTest {
     }
 
     private class FakeStudio : StudioSettingsRepository {
-        override suspend fun load(): Result<StudioSettings> = Result.success(DEFAULT_STUDIO_SETTINGS)
+        override suspend fun load() =
+            Result.success(com.dmnarration.admin.domain.StudioSettingsRead(DEFAULT_STUDIO_SETTINGS, emptyList()))
 
         override suspend fun loadAll() = Result.success(
             com.dmnarration.admin.domain.SiteSettings(
@@ -83,7 +84,7 @@ class BoardGestureWriteTest {
                 availableMonths = listOf(11, 12, 1, 2),
                 availableMonthsRaw = null,
                 acceptingProjectsRaw = null,
-                studio = DEFAULT_STUDIO_SETTINGS,
+                studio = com.dmnarration.admin.domain.StudioSettingsRead(DEFAULT_STUDIO_SETTINGS, emptyList()),
             ),
         )
     }
