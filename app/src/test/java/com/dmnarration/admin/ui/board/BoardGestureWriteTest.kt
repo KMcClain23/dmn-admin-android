@@ -2,7 +2,9 @@ package com.dmnarration.admin.ui.board
 
 import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.data.StudioSettingsRepository
+import com.dmnarration.admin.domain.ArchivedCard
 import com.dmnarration.admin.domain.BoardCard
+import com.dmnarration.admin.domain.ReleasedBook
 import com.dmnarration.admin.domain.DEFAULT_STUDIO_SETTINGS
 import com.dmnarration.admin.domain.STATUS_RELEASED
 import com.dmnarration.admin.domain.StudioSettings
@@ -70,6 +72,12 @@ class BoardGestureWriteTest {
             })
         }
 
+        // Stage 6 additions. Present so the compiler enforces that this fake
+        // covers the whole interface; these tests do not exercise the shelf.
+        override suspend fun released() = Result.success(emptyList<ReleasedBook>())
+        override suspend fun archived() = Result.success(emptyList<ArchivedCard>())
+        override suspend fun unarchive(cardId: String): Result<ArchivedCard?> =
+            Result.success(null)
         override suspend fun cardDetail(cardId: String) =
             Result.success<com.dmnarration.admin.domain.CardDetail?>(null)
     }

@@ -18,6 +18,7 @@ import com.dmnarration.admin.domain.ProductionSubgroup
 import com.dmnarration.admin.domain.SiteSettings
 import com.dmnarration.admin.domain.StudioSettings
 import com.dmnarration.admin.domain.UserRole
+import com.dmnarration.admin.ui.describeDataFailure
 import com.dmnarration.admin.domain.WriteOutcome
 import com.dmnarration.admin.domain.applyOptimistic
 import com.dmnarration.admin.domain.reconcileWrite
@@ -317,7 +318,7 @@ class BoardViewModel @Inject constructor(
                 .fold(
                     // A row means saved; null means zero rows, which is RLS
                     // refusing this row rather than anything going wrong.
-                    onSuccess = { row -> row?.let(WriteOutcome::Saved) ?: WriteOutcome.Refused },
+                    onSuccess = { row -> row?.let { WriteOutcome.Saved(it) } ?: WriteOutcome.Refused },
                     onFailure = { WriteOutcome.Failed(describe(it)) },
                 )
 
@@ -371,23 +372,14 @@ class BoardViewModel @Inject constructor(
      * error a person reads gets a sentence and a way forward; the object it came
      * from is for whoever is debugging.
      */
-    private fun describe(t: Throwable): String {
-        Log.w(TAG, "board load failed", t)
-        val message = t.message.orEmpty()
-        return when {
-            t is BoardAccessNotEnabledException ->
-                "Board access is not enabled for this account yet."
-            message.contains("Unable to resolve host", ignoreCase = true) ||
-                message.contains("timeout", ignoreCase = true) ||
-                message.contains("Failed to connect", ignoreCase = true) ||
-                t is java.io.IOException ->
-                "No connection. Pull down to try again."
-            message.contains("permission denied", ignoreCase = true) ||
-                message.contains("JWT", ignoreCase = true) ->
-                "Your session is no longer allowed to read the board. Try signing out and in again."
-            else -> "Could not load the board. Pull down to try again."
-        }
-    }
+    private fun describe(t: Throwable): String = describeDataFailure(
+        t = t,
+        tag = TAG,
+        logMessage = "board load failed",
+        refused = "Board access is not enabled for this account yet.",
+        revoked = "Your session is no longer allowed to read the board. Try signing out and in again.",
+        generic = "Could not load the board. Pull down to try again.",
+    )
 
     private companion object {
         const val TAG = "BoardViewModel"

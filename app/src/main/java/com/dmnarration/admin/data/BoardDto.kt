@@ -73,6 +73,14 @@ private fun date(raw: String?): LocalDate? {
  * It only breaks ties in the sort, so an unreadable one falls back to the epoch
  * — which sorts it last among equal deadlines — rather than failing the row.
  */
+internal fun instantOrNull(raw: String?): Instant? {
+    if (raw.isNullOrBlank()) return null
+    return runCatching { Instant.parse(raw) }
+        .recoverCatching { Instant.parse(raw.replace(" ", "T")) }
+        .onFailure { Log.w(TAG, "unparseable instant '$raw'", it) }
+        .getOrNull()
+}
+
 private fun instant(raw: String?): Instant {
     if (raw.isNullOrBlank()) return Instant.DISTANT_PAST
     return runCatching { Instant.parse(raw) }
@@ -102,7 +110,10 @@ fun BoardCardDto.toDomain(): BoardCard = BoardCard(
     recordingDates = recording_dates.orEmpty().mapNotNull(::date),
     wordsRecorded = words_recorded,
     createdAt = instant(created_at),
-    archivedAt = archived_at?.let { runCatching { Instant.parse(it) }.getOrNull() },
+    // Through the logging helper rather than a bare getOrNull: an unreadable
+    // archived_at reads as "not archived", which puts the card back on the board.
+    // That is the one silent default here that changes what Dean sees.
+    archivedAt = instantOrNull(archived_at),
 )
 
 @Serializable

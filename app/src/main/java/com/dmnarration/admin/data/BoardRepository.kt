@@ -1,6 +1,10 @@
 package com.dmnarration.admin.data
 
+import com.dmnarration.admin.domain.ArchivedCard
 import com.dmnarration.admin.domain.CardDetail
+import com.dmnarration.admin.domain.ReleasedBook
+import com.dmnarration.admin.domain.UNARCHIVE_COLUMNS
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.dmnarration.admin.domain.BoardCard
@@ -53,6 +57,28 @@ interface BoardRepository {
      * was made of.
      */
     suspend fun cardDetail(cardId: String): Result<CardDetail?>
+
+    /**
+     * Every released book, archived ones included.
+     *
+     * The archived ones are returned rather than filtered away so that both
+     * "how many has he released" and "which are visible" come from one query
+     * with the predicate applied where it is read. Refusal is
+     * [BoardAccessNotEnabledException], never an empty list.
+     */
+    suspend fun released(): Result<List<ReleasedBook>>
+
+    /** Everything archived, whatever its status. Refusal is an exception, not zero rows. */
+    suspend fun archived(): Result<List<ArchivedCard>>
+
+    /**
+     * Put an archived card back, clearing all three archive fields together.
+     *
+     * Same contract as [updateCard] and for the same reason: null means the
+     * server accepted the statement and changed nothing, which is RLS refusing
+     * the row and arrives wearing HTTP 200.
+     */
+    suspend fun unarchive(cardId: String): Result<ArchivedCard?>
 }
 
 /**
@@ -143,9 +169,60 @@ class SupabaseBoardRepository @Inject constructor(
         }
     }
 
+    /**
+     * Order comes from the function, not from here.
+     *
+     * `released_for_session()` orders by `released_at desc nulls last, title
+     * asc`, matching `/api/released/route.ts` down to the tiebreak. Re-sorting
+     * the list in Kotlin would be a second implementation of that ordering,
+     * free to drift from the one the web uses; the list is rendered in the order
+     * it arrives and `ShelfTest` pins that.
+     */
+    override suspend fun released(): Result<List<ReleasedBook>> = runCatching {
+        try {
+            client.postgrest.rpc(RELEASED_RPC)
+                .decodeList<ReleasedBookDto>()
+                .map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
+    override suspend fun archived(): Result<List<ArchivedCard>> = runCatching {
+        try {
+            client.postgrest.rpc(ARCHIVED_RPC)
+                .decodeList<ArchivedCardDto>()
+                .map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
+    /**
+     * The patch is built from [UNARCHIVE_COLUMNS], so the columns the write
+     * clears and the columns the test asserts on are the same list rather than
+     * two lists that have to be kept in step.
+     */
+    override suspend fun unarchive(cardId: String): Result<ArchivedCard?> = runCatching {
+        client.from("board_cards")
+            .update(buildJsonObject { UNARCHIVE_COLUMNS.forEach { put(it, JsonNull) } }) {
+                select(Columns.raw(ARCHIVED_COLUMNS))
+                filter { eq("id", cardId) }
+            }
+            .decodeList<ArchivedCardDto>()
+            .firstOrNull()
+            ?.toDomain()
+    }
+
     private companion object {
         const val BOARD_RPC = "board_for_session"
         const val CARD_RPC = "card_detail"
+        const val RELEASED_RPC = "released_for_session"
+        const val ARCHIVED_RPC = "archived_for_session"
+
+        /** The un-archive's return shape; the reads' lists live in the RPC signatures. */
+        const val ARCHIVED_COLUMNS =
+            "id, title, author, cover_url, archived_at, archived_reason, archived_notes, status"
 
         /** The write's return shape. The read's list lives in the RPC signature. */
         const val ADMIN_COLUMNS =

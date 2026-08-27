@@ -22,7 +22,7 @@ import kotlinx.datetime.LocalDate
  * favour of it.)
  */
 data class BoardCard(
-    val id: String,
+    override val id: String,
     val title: String,
     val author: String,
     /** Raw column: JSON-encoded array in most rows, a bare name in some. */
@@ -52,7 +52,7 @@ data class BoardCard(
      * would return a row with this null and the card would reappear.
      */
     val archivedAt: Instant? = null,
-)
+) : Identified
 
 /** Deadline colouring. Same three states the web pills use. */
 enum class Urgency { DEFAULT, YELLOW, RED }

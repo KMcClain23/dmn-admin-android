@@ -15,15 +15,32 @@ package com.dmnarration.admin.domain
  * authorization answer arrives wearing success. So a write reports what came
  * back, never whether it threw.
  */
-sealed interface WriteOutcome {
+sealed interface WriteOutcome<out T> {
     /** The server returned the row. Its copy is the truth, not the optimistic guess. */
-    data class Saved(val row: BoardCard) : WriteOutcome
+    data class Saved<T>(val row: T) : WriteOutcome<T>
 
     /** Success, zero rows: RLS refused this row. A write that returns no row has not happened. */
-    data object Refused : WriteOutcome
+    data object Refused : WriteOutcome<Nothing>
 
     /** The request failed outright — network, permission denied, anything thrown. */
-    data class Failed(val message: String) : WriteOutcome
+    data class Failed(val message: String) : WriteOutcome<Nothing>
+}
+
+/**
+ * Anything this file can reconcile: a row the server can return by id.
+ *
+ * The row type is a parameter rather than `BoardCard` because Stage 6's archive
+ * screen performs a write with exactly these three outcomes over a different
+ * row. 6C.2 requires "full Stage 2 write discipline… not negotiable", and the
+ * only way to require it is to reuse it — a second copy of this reducer would
+ * be a second thing to keep correct, which is what 6A was about.
+ *
+ * `id` is a supertype rather than a selector parameter so every existing call
+ * site compiles unchanged; the compiler still checks that a new row type
+ * actually has one.
+ */
+interface Identified {
+    val id: String
 }
 
 /**
@@ -33,14 +50,14 @@ sealed interface WriteOutcome {
  * a rollback restores it verbatim rather than recomputing a "default". A toggle
  * that was already complete must roll back to complete.
  */
-data class PendingWrite(
+data class PendingWrite<out T>(
     val cardId: String,
-    val previous: BoardCard,
+    val previous: T,
 )
 
 /** What the reducer decided: the new list, anything to say, and whether to re-fetch. */
-data class WriteReduction(
-    val cards: List<BoardCard>,
+data class WriteReduction<T>(
+    val cards: List<T>,
     val error: String? = null,
     val refresh: Boolean = false,
 )
@@ -52,11 +69,11 @@ data class WriteReduction(
  * the card was not present, in which case nothing was applied and there is
  * nothing to reconcile.
  */
-fun applyOptimistic(
-    cards: List<BoardCard>,
+fun <T : Identified> applyOptimistic(
+    cards: List<T>,
     cardId: String,
-    edit: (BoardCard) -> BoardCard,
-): Pair<List<BoardCard>, PendingWrite?> {
+    edit: (T) -> T,
+): Pair<List<T>, PendingWrite<T>?> {
     val existing = cards.firstOrNull { it.id == cardId }
         ?: return cards to null
     val updated = cards.map { if (it.id == cardId) edit(it) else it }
@@ -72,11 +89,11 @@ fun applyOptimistic(
  * optimistic guess here would leave the screen disagreeing with the database in
  * exactly the fields the database owns.
  */
-fun reconcileWrite(
-    cards: List<BoardCard>,
-    pending: PendingWrite,
-    outcome: WriteOutcome,
-): WriteReduction = when (outcome) {
+fun <T : Identified> reconcileWrite(
+    cards: List<T>,
+    pending: PendingWrite<T>,
+    outcome: WriteOutcome<T>,
+): WriteReduction<T> = when (outcome) {
     is WriteOutcome.Saved -> WriteReduction(
         cards = cards.map { if (it.id == pending.cardId) outcome.row else it },
     )
@@ -99,5 +116,5 @@ fun reconcileWrite(
 }
 
 /** Restores the captured card verbatim — never a recomputed default. */
-private fun rollback(cards: List<BoardCard>, pending: PendingWrite): List<BoardCard> =
+private fun <T : Identified> rollback(cards: List<T>, pending: PendingWrite<T>): List<T> =
     cards.map { if (it.id == pending.cardId) pending.previous else it }

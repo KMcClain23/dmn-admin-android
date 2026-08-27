@@ -11,6 +11,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.dmnarration.admin.ui.agenda.AgendaScreen
 import com.dmnarration.admin.ui.settings.SettingsScreen
+import com.dmnarration.admin.ui.shelf.ArchiveScreen
+import com.dmnarration.admin.ui.shelf.ReleasedScreen
+import com.dmnarration.admin.ui.shelf.ShelfViewModel
 import com.dmnarration.admin.ui.theme.SurfaceRaised
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -159,8 +162,19 @@ private fun AppRoot(modifier: Modifier = Modifier) {
     }
 }
 
-/** The two destinations. Board is the app's home; Today is what it asks of you. */
-private enum class Destination(val label: String) { TODAY("Today"), BOARD("Board"), SETTINGS("Settings") }
+/**
+ * Where the app can be. Board is its home; Today is what it asks of you.
+ *
+ * Released and Archive sit either side of Settings because they are both
+ * histories rather than work: one is what shipped, the other is what stopped.
+ */
+private enum class Destination(val label: String) {
+    TODAY("Today"),
+    BOARD("Board"),
+    RELEASED("Released"),
+    ARCHIVE("Archive"),
+    SETTINGS("Settings"),
+}
 
 @Composable
 private fun BoardRoute(
@@ -169,7 +183,13 @@ private fun BoardRoute(
 ) {
     val vm: BoardViewModel = hiltViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
-    var selected by remember { mutableStateOf<BoardCard?>(null) }
+    val shelfVm: ShelfViewModel = hiltViewModel()
+    val shelf by shelfVm.state.collectAsStateWithLifecycle()
+    // An id rather than a card: Released and Archive open the same detail sheet
+    // from rows that are not BoardCards, and `card_detail()` only ever needed
+    // the id. Holding a whole card here would have meant three overlays, or one
+    // that could only be opened from the board.
+    var selectedCardId by rememberSaveable { mutableStateOf<String?>(null) }
     var where by rememberSaveable { mutableStateOf(Destination.BOARD) }
 
     // Hoisted here rather than inside BoardScreen so switching to Today and back
@@ -178,7 +198,13 @@ private fun BoardRoute(
     val pipelineScroll = rememberLazyListState()
     val productionScroll = rememberLazyListState()
 
-    LaunchedEffect(role) { vm.start(role) }
+    LaunchedEffect(role) {
+        vm.start(role)
+        shelfVm.start(role)
+    }
+    // A restored card belongs on the board again, and the board is the only
+    // thing that can put it there.
+    LaunchedEffect(Unit) { shelfVm.onRestored = vm::refresh }
 
     Column(Modifier.fillMaxSize().background(Background)) {
         Box(Modifier.weight(1f)) {
@@ -187,7 +213,7 @@ private fun BoardRoute(
                     state = state,
                     onRefresh = vm::refresh,
                     onToggleFilter = vm::setDateFilter,
-                    onOpenCard = { selected = it },
+                    onOpenCard = { selectedCardId = it.id },
                     onToggleFirst15 = vm::toggleFirst15,
                     onMoveTo = vm::moveTo,
                     onArchive = { id, reason, notes -> vm.archive(id, reason.stored, notes) },
@@ -195,6 +221,19 @@ private fun BoardRoute(
                     pagerState = pagerState,
                     pipelineScroll = pipelineScroll,
                     productionScroll = productionScroll,
+                )
+
+                Destination.RELEASED -> ReleasedScreen(
+                    state = shelf,
+                    onRefresh = shelfVm::refresh,
+                    onOpenCard = { selectedCardId = it },
+                )
+
+                Destination.ARCHIVE -> ArchiveScreen(
+                    state = shelf,
+                    onRefresh = shelfVm::refresh,
+                    onUnarchive = shelfVm::unarchive,
+                    onOpenCard = { selectedCardId = it },
                 )
 
                 Destination.SETTINGS -> SettingsScreen(
@@ -213,7 +252,7 @@ private fun BoardRoute(
                     // read today either.
                     error = state.error,
                     onRefresh = vm::refresh,
-                    onOpenCard = { selected = it },
+                    onOpenCard = { selectedCardId = it.id },
                 )
             }
         }
@@ -237,18 +276,18 @@ private fun BoardRoute(
 
     // Layered over the board rather than replacing it, so back returns to the same
     // tab scrolled where it was — by construction rather than by restoring anything.
-    selected?.let { card ->
-        val detailVm: CardDetailViewModel = hiltViewModel(key = card.id)
+    selectedCardId?.let { cardId ->
+        val detailVm: CardDetailViewModel = hiltViewModel(key = cardId)
         val detailState by detailVm.state.collectAsStateWithLifecycle()
-        LaunchedEffect(card.id) { detailVm.start(card.id) }
+        LaunchedEffect(cardId) { detailVm.start(cardId) }
 
-        BackHandler { selected = null }
+        BackHandler { selectedCardId = null }
 
         Box(Modifier.fillMaxSize().background(Background)) {
             CardDetailScreen(
                 state = detailState,
                 capabilities = state.capabilities,
-                onBack = { selected = null },
+                onBack = { selectedCardId = null },
                 onRefresh = detailVm::refresh,
             )
         }
