@@ -224,8 +224,69 @@ class AgendaTest {
 
     // ─── progress ───────────────────────────────────────────────────────────
 
-    @Test fun `progress is the recorded fraction`() {
-        assertEquals(0.2, recordedFraction(book("a", "recording", wordCount = 92_000, recorded = 18_400))!!, 0.0001)
+    /**
+     * ONE DENOMINATOR.
+     *
+     * The percentage on the progress bar and the percentage implied by the remaining
+     * hours must come from the same place. They did not: the bar divided by
+     * `word_count` while `narrationPlan` divides by the narrator's share, so a duet
+     * showed 20% and 40% on the same screen. `narrationPlan.fractionDone` is the
+     * reference because it is the one that was right.
+     */
+    @Test fun `the progress bar and the remaining hours share a denominator`() {
+        val cards = listOf(
+            book("duet", "recording", wordCount = 92_000, recorded = 18_400).copy(narrationFormat = "duet"),
+            book("solo", "recording", wordCount = 90_000, recorded = 45_000).copy(narrationFormat = "solo"),
+            book("dual", "recording", wordCount = 80_000, recorded = 10_000).copy(narrationFormat = "dual"),
+            book("explicit", "recording", wordCount = 100_000, recorded = 10_000)
+                .copy(narrationFormat = "multicast", narratorSharePercent = 25),
+        )
+        for (c in cards) {
+            val plan = narrationPlan(
+                NarrationInput(
+                    wordCount = c.wordCount,
+                    narrationFormat = c.narrationFormat,
+                    narratorSharePercent = c.narratorSharePercent,
+                    deadline = c.deadline,
+                    wordsPerNarrationHour = settings.wordsPerNarrationHour,
+                    wordsRecorded = c.wordsRecorded ?: 0,
+                    today = today,
+                ),
+            )!!
+            assertEquals(
+                "${c.id}: the bar and the hours must agree",
+                plan.fractionDone,
+                recordedFraction(c)!!,
+                0.000001,
+            )
+        }
+    }
+
+    /** A duet is half a manuscript, so 18,400 of 92,000 is 40% of the share. */
+    @Test fun `a duet measures against half the manuscript`() {
+        val duet = book("a", "recording", wordCount = 92_000, recorded = 18_400).copy(narrationFormat = "duet")
+        assertEquals(0.4, recordedFraction(duet)!!, 0.0001)
+    }
+
+    @Test fun `a solo measures against the whole manuscript`() {
+        val solo = book("a", "recording", wordCount = 92_000, recorded = 18_400).copy(narrationFormat = "solo")
+        assertEquals(0.2, recordedFraction(solo)!!, 0.0001)
+    }
+
+    /**
+     * Multicast has no default split, so there is no honest percentage to show.
+     * Guessing an equal one would print a confident wrong number.
+     */
+    @Test fun `multicast without an explicit share renders nothing`() {
+        val multicast = book("a", "recording", wordCount = 92_000, recorded = 18_400)
+            .copy(narrationFormat = "multicast")
+        assertNull(recordedFraction(multicast))
+    }
+
+    @Test fun `an explicit share wins for any format including multicast`() {
+        val explicit = book("a", "recording", wordCount = 100_000, recorded = 10_000)
+            .copy(narrationFormat = "multicast", narratorSharePercent = 25)
+        assertEquals("10,000 of 25,000", 0.4, recordedFraction(explicit)!!, 0.0001)
     }
 
     @Test fun `over-recorded clamps to one rather than reading as more than finished`() {

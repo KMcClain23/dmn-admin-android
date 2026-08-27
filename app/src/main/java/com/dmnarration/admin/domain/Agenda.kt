@@ -209,15 +209,33 @@ fun relativeDeadline(deadline: LocalDate, today: LocalDate): String {
 /**
  * How much of a book is recorded, as a fraction in 0..1, or null when unknowable.
  *
- * Clamped at both ends deliberately. `word_count` can be zero or absent, which would
- * divide by zero and render as NaN; and `words_recorded` is about to be maintained by
- * hand, so a figure larger than the total is a matter of time. Over-100% clamps to
- * 1.0 rather than reading as more-than-finished, and a missing or zero word count
- * returns null so the caller renders nothing rather than a confident 0%.
+ * THE DENOMINATOR IS THE SHARE, NOT THE MANUSCRIPT. `narrationPlan` subtracts
+ * `words_recorded` from `wordCount × narratorShare`, so `words_recorded` means the
+ * words THIS narrator recorded, not the book's total. Dividing by `word_count`
+ * instead put two different percentages of the same book on one screen: A Cowboy's
+ * Runaway read 20% on the progress bar and 40% by its remaining hours, because a
+ * duet is half a manuscript.
+ *
+ * The share comes from [narratorShareOf] — the same function `narrationPlan` uses —
+ * rather than being re-derived here. Two derivations of one rule is how the two
+ * percentages came to disagree in the first place, and `narrator_share_percent` is
+ * populated on 1 card in 33, so the inference from `narration_format` is the real
+ * mechanism and must not be duplicated.
+ *
+ * Null when the share is unknown. Multicast has no default split, and guessing an
+ * equal one would write a confident wrong number over a column Dean has just started
+ * maintaining. Rendering nothing is the honest answer.
+ *
+ * Still clamped at both ends: `words_recorded` is maintained by hand, so a figure
+ * above the share is a matter of time, and it must read as finished rather than as
+ * more-than-finished.
  */
 fun recordedFraction(card: BoardCard): Double? {
     val total = card.wordCount ?: return null
     if (total <= 0) return null
+    val share = narratorShareOf(card.narrationFormat, card.narratorSharePercent) ?: return null
+    val shareWords = total * share
+    if (shareWords <= 0) return null
     val done = (card.wordsRecorded ?: 0).coerceAtLeast(0)
-    return (done.toDouble() / total).coerceIn(0.0, 1.0)
+    return (done / shareWords).coerceIn(0.0, 1.0)
 }

@@ -71,11 +71,20 @@ data class CardDetail(
     val createdAt: Instant?,
 )
 
-/** How far through recording, clamped, or null when the word count cannot say. */
+/**
+ * How far through recording, clamped, or null when the share cannot be resolved.
+ *
+ * Divides by the narrator's SHARE of the manuscript, not the manuscript — the same
+ * denominator `narrationPlan` uses, taken from the same [narratorShareOf] rather than
+ * re-derived. See the note on the board's `recordedFraction`.
+ */
 fun CardDetail.recordedFraction(): Double? {
     val total = wordCount ?: return null
     if (total <= 0) return null
-    return ((wordsRecorded ?: 0).coerceAtLeast(0).toDouble() / total).coerceIn(0.0, 1.0)
+    val share = narratorShareOf(narrationFormat, narratorSharePercent) ?: return null
+    val shareWords = total * share
+    if (shareWords <= 0) return null
+    return ((wordsRecorded ?: 0).coerceAtLeast(0).toDouble() / shareWords).coerceIn(0.0, 1.0)
 }
 
 /**
