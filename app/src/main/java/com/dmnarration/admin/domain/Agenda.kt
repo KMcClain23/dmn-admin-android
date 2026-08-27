@@ -32,36 +32,76 @@ val PRE_DELIVERY = setOf("contracted", "prepping", "recording")
 const val DUE_SOON_DAYS = 7
 
 /**
- * Why a book is on today's agenda. Declaration order IS priority order.
+ * The three bands the agenda sorts into, and the only thing category still decides.
  *
- * Late first because it is the plan that already failed; recording-today is a plan
- * still on track. A book qualifying for several reasons is grouped under its highest
- * and carries the rest as chips — it is one book, and rendering it twice on a
- * two-item screen is how the first cut of this looked.
+ * Declaration order is tier order, and that much IS a category judgement: what has
+ * already failed outranks what is happening now, which outranks what is coming. That
+ * is a rule about kinds and it is stable.
+ *
+ * What category must NOT decide is the order *within* a band. A first-15 due in three
+ * days and a delivery due in six are both upcoming, and the nearer one comes first
+ * whichever kind it is.
  */
-enum class AgendaReason { LATE, RECORDING_TODAY, DUE_SOON }
+enum class AgendaTier { LATE, TODAY, UPCOMING }
+
+/**
+ * Why a book is on today's agenda.
+ *
+ * DECLARATION ORDER IS NO LONGER PRIORITY. It was, through Stage 3, and it stopped
+ * expressing the rule the moment first-15 arrived: with five reasons across two kinds
+ * of deadline, an enum position would rank a delivery due in six days above a first-15
+ * due in three purely because of where it sat in this list. Each reason now carries
+ * its [tier] and the date it is about, and the sort is (tier, date) — so the mechanism
+ * states the rule instead of encoding it in an ordering nobody can see.
+ */
+enum class AgendaReason(val tier: AgendaTier) {
+    LATE(AgendaTier.LATE),
+    FIRST15_OVERDUE(AgendaTier.LATE),
+    RECORDING_TODAY(AgendaTier.TODAY),
+    DUE_SOON(AgendaTier.UPCOMING),
+    FIRST15_DUE_SOON(AgendaTier.UPCOMING),
+}
+
+/** The date a reason is about, which is what orders it inside its tier. */
+fun AgendaReason.dateFor(card: BoardCard, today: LocalDate): LocalDate? = when (this) {
+    AgendaReason.LATE, AgendaReason.DUE_SOON -> card.deadline
+    AgendaReason.FIRST15_OVERDUE, AgendaReason.FIRST15_DUE_SOON -> card.first15Due
+    AgendaReason.RECORDING_TODAY -> today
+}
 
 /**
  * One BOOK on the agenda, with the set of reasons it qualified today.
  *
  * Deliberately a book plus reasons rather than a row in a filtered per-section list.
  * The filtered shape let A Cowboy's Runaway occupy two of the screen's two slots with
- * near-identical content, and it would have done the same again the moment
- * `first15_due` landed. As a reason set, a new commitment type is another member —
- * not another section that reintroduces the duplication.
+ * near-identical content, and it would have done it again with every commitment type
+ * added since.
  */
 data class AgendaItem(
     val card: BoardCard,
     val reasons: Set<AgendaReason>,
     /** Hours today's plan asks of this book. Only meaningful when it is recording today. */
     val hours: Double?,
+    val today: LocalDate,
 ) {
-    /** The group this card is rendered under: its highest-priority reason. */
-    val primary: AgendaReason get() = AgendaReason.entries.first { it in reasons }
+    /** The band this card renders under: the most urgent tier among its reasons. */
+    val tier: AgendaTier get() = reasons.minOf { it.tier }
+
+    /**
+     * The reason that put it in that band — the one with the nearest date, not the
+     * one that happens to be declared first.
+     */
+    val primary: AgendaReason
+        get() = reasons.filter { it.tier == tier }
+            .minWithOrNull(compareBy(nullsLast()) { it.dateFor(card, today) })
+            ?: reasons.first()
 
     /** Everything else it qualified for, rendered as chips on the same card. */
     val secondary: List<AgendaReason>
         get() = AgendaReason.entries.filter { it in reasons && it != primary }
+
+    /** Sorts within the tier: earliest first, which is most-late first and soonest first. */
+    val sortDate: LocalDate? get() = primary.dateFor(card, today)
 }
 
 data class Agenda(
@@ -71,7 +111,7 @@ data class Agenda(
     val weekHours: Double,
     val monthHours: Double,
 ) {
-    fun grouped(reason: AgendaReason): List<AgendaItem> = items.filter { it.primary == reason }
+    fun grouped(tier: AgendaTier): List<AgendaItem> = items.filter { it.tier == tier }
 
     val isEmpty: Boolean get() = items.isEmpty()
 }
@@ -167,22 +207,39 @@ fun buildAgenda(
         }
 
         // Every reason this book qualified, gathered before anything is grouped.
+        //
+        // first_15_complete is treated as false when null: an unanswered question
+        // about whether the first fifteen were delivered is not a yes.
+        val first15Pending = !card.first15Complete
+        val first15 = card.first15Due
+
         val reasons = buildSet {
             if (isLate(card, today)) add(AgendaReason.LATE)
             if (today in dates) add(AgendaReason.RECORDING_TODAY)
+
             val deadline = card.deadline
             if (deadline != null && deadline >= today && deadline <= horizon) {
                 add(AgendaReason.DUE_SOON)
             }
+
+            if (first15Pending && first15 != null) {
+                if (first15 < today) add(AgendaReason.FIRST15_OVERDUE)
+                else if (first15 <= horizon) add(AgendaReason.FIRST15_DUE_SOON)
+            }
         }
 
-        if (reasons.isNotEmpty()) items += AgendaItem(card, reasons, perDay)
+        if (reasons.isNotEmpty()) items += AgendaItem(card, reasons, perDay, today)
     }
 
     return Agenda(
         today = today,
-        // Soonest deadline first within a group; a book with no deadline sorts last.
-        items = items.sortedWith(compareBy({ it.primary.ordinal }, { it.card.deadline })),
+        // Tier first, then the nearest date inside it — never the category. A
+        // first-15 due in three days sorts above a delivery due in six.
+        items = items.sortedWith(
+            compareBy<AgendaItem> { it.tier.ordinal }
+                .thenBy(nullsLast()) { it.sortDate }
+                .thenBy { it.card.title },
+        ),
         weekHours = weekHours,
         monthHours = monthHours,
     )

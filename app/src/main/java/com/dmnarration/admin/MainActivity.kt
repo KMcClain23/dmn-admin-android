@@ -10,6 +10,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.dmnarration.admin.ui.agenda.AgendaScreen
+import com.dmnarration.admin.ui.settings.SettingsScreen
 import com.dmnarration.admin.ui.theme.SurfaceRaised
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -160,7 +161,7 @@ private fun AppRoot(modifier: Modifier = Modifier) {
 }
 
 /** The two destinations. Board is the app's home; Today is what it asks of you. */
-private enum class Destination(val label: String) { TODAY("Today"), BOARD("Board") }
+private enum class Destination(val label: String) { TODAY("Today"), BOARD("Board"), SETTINGS("Settings") }
 
 @Composable
 private fun BoardRoute(
@@ -195,6 +196,14 @@ private fun BoardRoute(
                     pagerState = pagerState,
                     pipelineScroll = pipelineScroll,
                     productionScroll = productionScroll,
+                )
+
+                Destination.SETTINGS -> SettingsScreen(
+                    settings = state.site,
+                    loading = state.loading,
+                    refreshing = state.refreshing,
+                    error = state.error,
+                    onRefresh = vm::refresh,
                 )
 
                 Destination.TODAY -> AgendaScreen(

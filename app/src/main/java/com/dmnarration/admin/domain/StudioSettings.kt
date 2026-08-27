@@ -46,6 +46,18 @@ object SettingKeys {
     const val DAILY_CAPACITY_HOURS = "studio_daily_capacity_hours"
     const val MAX_BOOKS_PER_DAY = "studio_max_books_per_day"
     const val HEAVY_DAY_HOURS = "studio_heavy_day_hours"
+
+    /** Not a studio number — whether Dean is taking work at all. */
+    const val ACCEPTING_PROJECTS = "accepting_projects"
+
+    /** The booking window, stored in run order and NOT sorted. See [monthWindow]. */
+    const val AVAILABLE_MONTHS = "available_months"
+
+    /** Every key the table holds. Settings renders all of them. */
+    val ALL = listOf(
+        WORDS_PER_NARRATION_HOUR, WORDS_PER_FINISHED_HOUR, DAILY_CAPACITY_HOURS,
+        MAX_BOOKS_PER_DAY, HEAVY_DAY_HOURS, ACCEPTING_PROJECTS, AVAILABLE_MONTHS,
+    )
 }
 
 /**

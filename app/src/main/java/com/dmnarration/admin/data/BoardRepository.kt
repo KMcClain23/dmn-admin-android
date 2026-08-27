@@ -5,6 +5,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.SettingKeys
+import com.dmnarration.admin.domain.SiteSettings
 import com.dmnarration.admin.domain.StudioSettings
 import com.dmnarration.admin.domain.studioSettingsFrom
 import io.github.jan.supabase.SupabaseClient
@@ -191,6 +192,15 @@ internal fun Throwable.isCardAccessRefusal(): Boolean {
  */
 interface StudioSettingsRepository {
     suspend fun load(): Result<StudioSettings>
+
+    /**
+     * Everything the table holds, for the Settings screen.
+     *
+     * Read-only by the schema, not by convention: `site_settings` has a `Role read`
+     * policy and no update policy at all, so there is deliberately no counterpart to
+     * this and adding one needs a migration first.
+     */
+    suspend fun loadAll(): Result<SiteSettings>
 }
 
 @Singleton
@@ -212,5 +222,24 @@ class SupabaseStudioSettingsRepository @Inject constructor(
             }
             .decodeList<SiteSettingDto>()
         studioSettingsFrom(rows.mapNotNull { r -> r.value?.let { r.key to it } }.toMap())
+    }
+
+    override suspend fun loadAll(): Result<SiteSettings> = runCatching {
+        val rows = client.from("site_settings")
+            .select(Columns.raw("key, value")) {
+                filter { isIn("key", SettingKeys.ALL) }
+            }
+            .decodeList<SiteSettingDto>()
+        val map = rows.mapNotNull { r -> r.value?.let { r.key to it } }.toMap()
+        SiteSettings(
+            acceptingProjects = map[SettingKeys.ACCEPTING_PROJECTS]?.toBooleanStrictOrNull(),
+            // Parsed without sorting. The stored order IS the booking window.
+            availableMonths = map[SettingKeys.AVAILABLE_MONTHS]
+                ?.trim()?.removePrefix("[")?.removeSuffix("]")
+                ?.split(',')
+                ?.mapNotNull { it.trim().toIntOrNull() }
+                .orEmpty(),
+            studio = studioSettingsFrom(map),
+        )
     }
 }

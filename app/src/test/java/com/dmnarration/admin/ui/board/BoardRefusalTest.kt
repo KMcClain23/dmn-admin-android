@@ -70,6 +70,14 @@ class BoardRefusalTest {
 
     private class FakeStudio : StudioSettingsRepository {
         override suspend fun load(): Result<StudioSettings> = Result.success(DEFAULT_STUDIO_SETTINGS)
+
+        override suspend fun loadAll() = Result.success(
+            com.dmnarration.admin.domain.SiteSettings(
+                acceptingProjects = true,
+                availableMonths = listOf(11, 12, 1, 2),
+                studio = DEFAULT_STUDIO_SETTINGS,
+            ),
+        )
     }
 
     private val cards = listOf(card(id = "a"), card(id = "b"))

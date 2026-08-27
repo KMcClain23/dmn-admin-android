@@ -15,6 +15,7 @@ import com.dmnarration.admin.domain.DEFAULT_STUDIO_SETTINGS
 import com.dmnarration.admin.domain.DateFilter
 import com.dmnarration.admin.domain.PipelineBucket
 import com.dmnarration.admin.domain.ProductionSubgroup
+import com.dmnarration.admin.domain.SiteSettings
 import com.dmnarration.admin.domain.StudioSettings
 import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.domain.WriteOutcome
@@ -69,6 +70,8 @@ data class BoardUiState(
      * the zero describes the viewport rather than their work.
      */
     val refused: Boolean = false,
+    /** Everything site_settings holds, for the read-only Settings screen. */
+    val site: SiteSettings? = null,
     /**
      * Today's agenda, derived from the very same cards the board renders.
      *
@@ -153,11 +156,14 @@ class BoardViewModel @Inject constructor(
             // Only when the session may read them. An editor has no policy
             // granting select on site_settings, and asking would produce an
             // error that reads as a bug rather than a rule.
-            val settings = if (_state.value.capabilities.canViewStudioSettings) {
-                studio.load().getOrElse { DEFAULT_STUDIO_SETTINGS }
+            // One read for both: the Settings screen shows what the board already
+            // needed, plus the two availability keys.
+            val site = if (_state.value.capabilities.canViewStudioSettings) {
+                studio.loadAll().getOrNull()
             } else {
-                DEFAULT_STUDIO_SETTINGS
+                null
             }
+            val settings = site?.studio ?: DEFAULT_STUDIO_SETTINGS
 
             board.loadBoard()
                 .onSuccess { cards ->
@@ -174,6 +180,7 @@ class BoardViewModel @Inject constructor(
                         error = if (keepError) _state.value.error else null,
                         refused = false,
                         settings = settings,
+                        site = site,
                         // Restores what a refusal withdrew. Only an admin gets
                         // rows out of board_for_session(), so a successful read
                         // is the server itself saying this session still is

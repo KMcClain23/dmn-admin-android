@@ -29,7 +29,16 @@ data class BoardCardDto(
     val status: String = "",
     val deadline: String? = null,
     val first15_due: String? = null,
-    val first_15_complete: Boolean = false,
+    /**
+     * Nullable, because the column is. A default covers an ABSENT key; an explicit
+     * null in the payload would throw against a non-nullable Boolean. No row holds
+     * null today, which is exactly why it would have surfaced as a crash on whichever
+     * card first did.
+     *
+     * Null means not complete: an unanswered question about whether the first fifteen
+     * minutes were delivered is not a yes.
+     */
+    val first_15_complete: Boolean? = null,
     val word_count: Int? = null,
     val pfh_rate: Double? = null,
     val payment_type: String? = null,
@@ -81,7 +90,7 @@ fun BoardCardDto.toDomain(): BoardCard = BoardCard(
     status = status,
     deadline = date(deadline),
     first15Due = date(first15_due),
-    first15Complete = first_15_complete,
+    first15Complete = first_15_complete ?: false,
     // Zero is absent, not zero — both columns are NOT NULL DEFAULT 0, so an
     // unset value arrives as 0 and would otherwise render as "0 words"/"~$0".
     wordCount = word_count?.takeIf { it > 0 },
