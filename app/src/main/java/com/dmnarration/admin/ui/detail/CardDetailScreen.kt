@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -253,7 +255,13 @@ private fun Dates(d: CardDetail) {
         Field("Deadline", d.deadline?.let(::longDate))
         Field("First 15 due", d.first15Due?.let(::longDate), struck = d.first15Complete)
         Field("First 15", if (d.first15Complete) "Complete" else "Outstanding")
-        Field("Released", d.releasedAt?.let(::instantDate))
+        // "Released" beside a status chip reading Editing asserts the book is out
+        // when it is not. The date is a fact — it was released and came back — so the
+        // label carries the tense rather than the row being hidden.
+        Field(
+            if (d.status == "released") "Released" else "Previously released",
+            d.releasedAt?.let(::instantDate),
+        )
         Field("Added", d.createdAt?.let(::instantDate))
         if (d.recordingDates.isNotEmpty()) {
             Field("Recording days", "${d.recordingDates.size}")
@@ -284,31 +292,48 @@ private fun Production(d: CardDetail, capabilities: Capabilities) {
 @Composable
 private fun Money(d: CardDetail) {
     Column {
-        Field("Payment", d.paymentType?.replaceFirstChar { it.uppercase() })
+        Field("Payment", paymentLabel(d.paymentType))
         Field("PFH rate", d.pfhRate?.let { "$%.2f".format(it) })
         Field("Narrator share", d.narratorSharePercent?.let { "$it%" })
         Field("Royalty split", d.royaltySplitPercent?.let { "$it%" })
     }
 }
 
+/**
+ * Chips that wrap by WIDTH, not by count.
+ *
+ * This was `values.chunked(3)` inside a `Column` of `Row`s — three chips per line
+ * whatever their length. A Row does not wrap, so when the three did not fit, the
+ * first child took the full width and the later ones were measured against nothing
+ * left: their text wrapped to roughly one character per line, producing a tall,
+ * nearly-invisible column that read as a third of a screen of blank space, with the
+ * following row of chips stranded beneath it looking like an orphaned section.
+ *
+ * `How an Angel Dies: Wrath` is the worst board-reachable case — nine warnings, the
+ * longest 49 characters, and its middle chunk was 122 characters asked to share one
+ * line.
+ *
+ * FlowRow is the component that actually expresses the intent, and it removes the
+ * fixed count entirely rather than tuning it.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Chips(values: List<String>) {
     val c = DmnTheme.colors
-    Column {
-        for (row in values.chunked(3)) {
-            Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (v in row) {
-                    Text(
-                        v,
-                        style = DmnType.Pill,
-                        color = c.pillNeutralText,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(c.pillNeutralBg)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        for (v in values) {
+            Text(
+                v,
+                style = DmnType.Pill,
+                color = c.pillNeutralText,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(c.pillNeutralBg)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
     }
 }
@@ -367,6 +392,21 @@ private fun Links(links: List<Pair<String, String>>) {
             )
         }
     }
+}
+
+/**
+ * The web's own labels, not a title-cased enum value.
+ *
+ * `replaceFirstChar { uppercase() }` rendered "Pfh" one line above "PFH rate" — the
+ * same acronym in two casings, adjacent. An unknown value falls through as itself
+ * rather than being prettified into something that looks official.
+ */
+private fun paymentLabel(raw: String?): String? = when (raw) {
+    null -> null
+    "pfh" -> "PFH (Per Finished Hour)"
+    "rs" -> "Royalty Share (RS)"
+    "rs_plus" -> "Royalty Share Plus (RS+)"
+    else -> raw
 }
 
 private val MONTH_ABBR = listOf(
