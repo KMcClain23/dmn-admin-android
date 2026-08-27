@@ -58,3 +58,18 @@ fun archiveReasonLabel(stored: String?): String? {
  * the write cannot disagree about which columns are involved.
  */
 val UNARCHIVE_COLUMNS = listOf("archived_at", "archived_reason", "archived_notes")
+
+/**
+ * What to store for a note the user left empty: nothing, not an empty note.
+ *
+ * Matches the web verbatim -- `ArchiveConfirmDialog` writes
+ * `archiveNotes.trim() || null` -- because the same action performed from two
+ * clients must not produce two shapes in one column. Android used to write the
+ * raw string, so archiving with an empty note stored `''`, and `''` says "there
+ * are notes, and they are empty" while `null` says "there are no notes". Only
+ * one of those is true.
+ *
+ * Verified against the live column before it was changed: the sole archived row
+ * carries `null`, written by the web.
+ */
+fun archiveNotes(raw: String): String? = raw.trim().ifEmpty { null }

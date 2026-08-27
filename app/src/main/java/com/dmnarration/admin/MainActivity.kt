@@ -204,7 +204,16 @@ private fun BoardRoute(
     }
     // A restored card belongs on the board again, and the board is the only
     // thing that can put it there.
-    LaunchedEffect(Unit) { shelfVm.onRestored = vm::refresh }
+    LaunchedEffect(Unit) {
+        shelfVm.onRestored = vm::refresh
+        vm.onBoardChanged = shelfVm::markStale
+    }
+    // Paid on arrival rather than on every board write: releasing or archiving a
+    // card changes both shelf lists, and without this the card is missing from
+    // the board AND from the screen it moved to until someone pulls to refresh.
+    LaunchedEffect(where) {
+        if (where == Destination.RELEASED || where == Destination.ARCHIVE) shelfVm.onShown()
+    }
 
     Column(Modifier.fillMaxSize().background(Background)) {
         Box(Modifier.weight(1f)) {

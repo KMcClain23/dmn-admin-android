@@ -83,6 +83,7 @@ class ShelfViewModel @Inject constructor(
     private var allArchived: List<ArchivedCard> = emptyList()
     private val inFlight = mutableSetOf<String>()
     private var started = false
+    private var stale = false
 
     /** Called after a successful restore, to put the card back on the board. */
     var onRestored: (() -> Unit)? = null
@@ -95,6 +96,24 @@ class ShelfViewModel @Inject constructor(
     }
 
     fun refresh() = load(initial = false)
+
+    /**
+     * Something on the board changed, so these lists are no longer current.
+     *
+     * Marked rather than re-fetched: the shelf is usually not on screen when
+     * this happens, and a write should not spend two round trips updating lists
+     * nobody is looking at. [onShown] pays the cost at the moment it matters.
+     */
+    fun markStale() {
+        stale = true
+    }
+
+    /** Called when a shelf screen becomes visible. Re-reads only if it has to. */
+    fun onShown() {
+        if (!stale) return
+        stale = false
+        load(initial = false)
+    }
 
     private fun load(initial: Boolean) {
         _state.value = _state.value.copy(

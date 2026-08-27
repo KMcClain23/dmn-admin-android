@@ -19,6 +19,8 @@ import com.dmnarration.admin.domain.SiteSettings
 import com.dmnarration.admin.domain.StudioSettings
 import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.ui.describeDataFailure
+import com.dmnarration.admin.domain.archiveNotes
+import kotlinx.serialization.json.JsonNull
 import com.dmnarration.admin.domain.WriteOutcome
 import com.dmnarration.admin.domain.applyOptimistic
 import com.dmnarration.admin.domain.reconcileWrite
@@ -99,6 +101,9 @@ class BoardViewModel @Inject constructor(
 ) : ViewModel() {
 
     private var role: UserRole = UserRole.UNKNOWN
+    /** Told when a write lands, so the shelf screens know they are out of date. */
+    var onBoardChanged: (() -> Unit)? = null
+
     private var allCards: List<BoardCard> = emptyList()
 
     /** Cards with a write in flight, so a double tap cannot race itself. */
@@ -276,7 +281,11 @@ class BoardViewModel @Inject constructor(
             buildJsonObject {
                 put("archived_at", Clock.System.now().toString())
                 put("archived_reason", reason)
-                put("archived_notes", notes)
+                // Null for an empty note, matching the web. Writing "" here made
+                // the same action produce two different shapes in one column
+                // depending on which client performed it.
+                val note = archiveNotes(notes)
+                if (note == null) put("archived_notes", JsonNull) else put("archived_notes", note)
             }
         },
     )
@@ -327,6 +336,12 @@ class BoardViewModel @Inject constructor(
             inFlight -= cardId
             _state.value = _state.value.copy(error = reduction.error)
             reproject()
+            // Archiving and releasing both move a card OFF this board and onto
+            // one of the shelf screens. Without this the card is missing from
+            // both until someone pulls to refresh -- found on the device, not in
+            // review, and it is the exact mirror of the un-archive path which
+            // already tells the board to re-fetch.
+            if (outcome is WriteOutcome.Saved) onBoardChanged?.invoke()
             // A refusal says this session's view has changed, not just one row.
             if (reduction.refresh) load(initial = false, keepError = true)
         }

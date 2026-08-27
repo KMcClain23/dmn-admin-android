@@ -141,6 +141,20 @@ class ShelfTest {
         )
     }
 
+    @Test fun `an empty note is stored as nothing, not as an empty note`() {
+        // The web writes `archiveNotes.trim() || null`. Android wrote the raw
+        // string, so the same action produced '' from the phone and null from
+        // the browser in one column.
+        assertNull(archiveNotes(""))
+        assertNull(archiveNotes("   "))
+        assertNull(archiveNotes("\n\t "))
+    }
+
+    @Test fun `a real note is trimmed and kept`() {
+        assertEquals("recast by the publisher", archiveNotes("  recast by the publisher  "))
+        assertEquals("a", archiveNotes("a"))
+    }
+
     // ---- the write reducer, over a row that is not a BoardCard ----
 
     @Test fun `a refused restore puts the card back exactly as it was`() {
