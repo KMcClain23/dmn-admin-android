@@ -64,34 +64,87 @@ class MoneyTest {
         assertEquals(1367.02, totalReceived(rows), 0.001)
     }
 
-    @Test fun `a year total counts only rows received in that year`() {
+    // ---- the breakdown must account for its own total ----
+
+    @Test fun `the buckets always sum to the total`() {
+        // THE defect this replaced. The screen showed $6,844.98 over 2026
+        // $6,716.08 and 2025 $8.90 — years summing to $6,724.98 — because eight
+        // rows carried money with no received_on and sat in neither year.
+        val rows = listOf(
+            payment("a", 6716.08, receivedOn = "2026-08-20"),
+            payment("b", 8.90, receivedOn = "2025-11-02"),
+            payment("c", 120.00, receivedOn = null),
+        )
+        val b = receivedBreakdown(rows)
+
+        assertEquals(6844.98, b.total, 0.001)
+        assertEquals(
+            "the parts must sum to the whole",
+            b.total,
+            b.buckets.sumOf { it.amount },
+            0.001,
+        )
+        assertEquals("and every row must be counted once", rows.size, b.count)
+    }
+
+    @Test fun `the breakdown total agrees with totalReceived`() {
+        // Two public paths to the same figure. Pinned together so a change to
+        // one cannot silently disagree with the other.
+        val rows = listOf(
+            payment("a", 100.0, receivedOn = "2026-01-05"),
+            payment("b", 200.0, receivedOn = "2025-12-31"),
+            payment("c", 400.0, receivedOn = null),
+            payment("d", 0.0, receivedOn = null),
+        )
+        assertEquals(totalReceived(rows), receivedBreakdown(rows).total, 0.001)
+    }
+
+    @Test fun `undated money gets its own line, labelled and last`() {
         val rows = listOf(
             payment("a", 100.0, receivedOn = "2026-01-05"),
             payment("b", 200.0, receivedOn = "2025-12-31"),
             payment("c", 400.0, receivedOn = null),
         )
-        assertEquals(100.0, receivedInYear(rows, 2026), 0.001)
-        assertEquals(200.0, receivedInYear(rows, 2025), 0.001)
+        val b = receivedBreakdown(rows)
+
+        assertEquals(listOf("2026", "2025", NO_DATE_BUCKET), b.buckets.map { it.label })
+        assertEquals(400.0, b.buckets.last().amount, 0.001)
+        assertEquals(1, b.buckets.last().count)
     }
 
-    @Test fun `only years with money in them are listed, newest first`() {
+    @Test fun `no undated rows means no undated line`() {
+        // An empty "No date recorded — $0.00" row would be a control that fires
+        // on nothing, and would read as a defect rather than as reassurance.
+        val rows = listOf(payment("a", 100.0, receivedOn = "2026-01-05"))
+        val b = receivedBreakdown(rows)
+
+        assertEquals(listOf("2026"), b.buckets.map { it.label })
+        assertTrue(b.buckets.none { it.label == NO_DATE_BUCKET })
+    }
+
+    @Test fun `years run newest first and a year with no money is absent`() {
         val rows = listOf(
             payment("a", 1.0, receivedOn = "2025-03-01"),
             payment("b", 1.0, receivedOn = "2026-03-01"),
-            payment("c", 1.0, receivedOn = null),
         )
-        // 2024 is absent rather than rendered as a zero that reads like a bad year,
-        // and the undated row contributes no year at all rather than defaulting.
-        assertEquals(listOf(2026, 2025), yearsWithPayments(rows))
+        // 2024 is absent rather than rendered as a zero that reads like a bad year.
+        assertEquals(listOf("2026", "2025"), receivedBreakdown(rows).buckets.map { it.label })
     }
 
-    @Test fun `a row with money and no date still counts toward the total`() {
-        // amount_received is NOT NULL and defaults to 0, so a row can carry money
-        // with no received_on. Dropping it from the total would understate what
-        // Dean has been paid — a partial sum wearing the label of a full one.
-        val rows = listOf(payment("a", 500.0, receivedOn = null))
-        assertEquals(500.0, totalReceived(rows), 0.001)
-        assertTrue(yearsWithPayments(rows).isEmpty())
+    @Test fun `every row undated still reconciles`() {
+        val rows = listOf(payment("a", 500.0, receivedOn = null), payment("b", 20.0, receivedOn = null))
+        val b = receivedBreakdown(rows)
+
+        assertEquals(listOf(NO_DATE_BUCKET), b.buckets.map { it.label })
+        assertEquals(520.0, b.total, 0.001)
+        assertEquals(b.total, b.buckets.sumOf { it.amount }, 0.001)
+    }
+
+    @Test fun `an empty ledger reconciles to zero rather than throwing`() {
+        val b = receivedBreakdown(emptyList())
+        assertEquals(0.0, b.total, 0.001)
+        assertEquals(0, b.count)
+        assertTrue(b.buckets.isEmpty())
     }
 
     // ---- expected is never collapsed ----

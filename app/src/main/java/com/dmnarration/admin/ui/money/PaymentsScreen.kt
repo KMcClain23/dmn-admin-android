@@ -19,9 +19,8 @@ import com.dmnarration.admin.domain.OUTSTANDING_NOT_COMPUTED
 import com.dmnarration.admin.domain.Payment
 import com.dmnarration.admin.domain.paymentKindLabel
 import com.dmnarration.admin.domain.paymentTitle
-import com.dmnarration.admin.domain.receivedInYear
-import com.dmnarration.admin.domain.totalReceived
-import com.dmnarration.admin.domain.yearsWithPayments
+import com.dmnarration.admin.domain.NO_DATE_BUCKET
+import com.dmnarration.admin.domain.receivedBreakdown
 import com.dmnarration.admin.ui.board.PullToRefreshSurface
 import com.dmnarration.admin.ui.board.ScrollableContent
 import com.dmnarration.admin.ui.theme.DmnTheme
@@ -101,6 +100,9 @@ fun PaymentsScreen(
 @Composable
 private fun Totals(payments: List<Payment>) {
     val c = DmnTheme.colors
+    // One object, so the headline and the lines under it cannot be computed from
+    // different populations. The total IS the sum of the buckets.
+    val breakdown = receivedBreakdown(payments)
     Column(
         Modifier
             .fillMaxWidth()
@@ -110,27 +112,29 @@ private fun Totals(payments: List<Payment>) {
     ) {
         Text("RECEIVED", style = DmnType.Label, color = c.textFaint)
         Text(
-            money(totalReceived(payments)),
+            money(breakdown.total),
             style = DmnType.TitleLg,
             color = c.accentAmberBright,
             modifier = Modifier.padding(top = 4.dp),
         )
         Text(
-            "across ${payments.size} ${if (payments.size == 1) "payment" else "payments"}",
+            "across ${breakdown.count} ${if (breakdown.count == 1) "payment" else "payments"}",
             style = DmnType.Small,
             color = c.textMuted,
         )
-        for (year in yearsWithPayments(payments)) {
+        for (bucket in breakdown.buckets) {
             Row(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("$year", style = DmnType.Body, color = c.textMuted)
                 Text(
-                    money(receivedInYear(payments, year)),
-                    style = DmnType.Numeric,
-                    color = c.textPrimary,
+                    bucket.label,
+                    style = DmnType.Body,
+                    // The undated line is a caveat rather than a period, and it
+                    // is dimmer so the years still read as the history.
+                    color = if (bucket.label == NO_DATE_BUCKET) c.textDim else c.textMuted,
                 )
+                Text(money(bucket.amount), style = DmnType.Numeric, color = c.textPrimary)
             }
         }
     }

@@ -85,18 +85,64 @@ const val OUTSTANDING_NOT_COMPUTED: String =
 fun totalReceived(payments: List<Payment>): Double =
     payments.sumOf { it.amountReceived }
 
-/** Received in one calendar year, for the only grouping the data supports honestly. */
-fun receivedInYear(payments: List<Payment>, year: Int): Double =
-    payments.filter { it.receivedOn?.year == year }.sumOf { it.amountReceived }
+/** One line of the breakdown: a year, or the rows that have no date at all. */
+data class ReceivedBucket(val label: String, val amount: Double, val count: Int)
 
 /**
- * The years that actually have money in them, newest first.
+ * The total and its breakdown, from one pass, with the total DERIVED FROM the
+ * buckets rather than computed beside them.
  *
- * Derived from the rows rather than from a range, so a year with no payments is
- * absent instead of rendering a zero that looks like a bad year.
+ * This shape exists because the first version got it wrong in a way that looked
+ * right. It offered `totalReceived` and a per-year figure as two independent
+ * functions, and the screen showed
+ *
+ *     RECEIVED  $6,844.98  across 24 payments
+ *       2026    $6,716.08
+ *       2025    $8.90
+ *
+ * where the years sum to $6,724.98. Eight rows — a third of the table — carry an
+ * `amount_received` with `received_on` null, so they sat in the total and in
+ * neither year. Nothing was wrong with any individual number; the breakdown just
+ * did not account for its own total, and a reader has no way to tell a gap like
+ * that from a rounding they should ignore.
+ *
+ * `received_on` is nullable while `amount_received` is NOT NULL, so money with no
+ * date is a shape the schema positively allows. Dropping those rows from the
+ * total instead would understate what Dean has been paid by $120 and silently
+ * hide eight payments, which is the worse of the two errors.
+ *
+ * The invariant is structural, not asserted after the fact: `total` is the sum of
+ * `buckets`, so a bucket that is forgotten cannot leave the total unchanged — it
+ * changes the total instead, which is visible. `MoneyTest` pins it against
+ * `totalReceived` so the two public paths cannot diverge either.
  */
-fun yearsWithPayments(payments: List<Payment>): List<Int> =
-    payments.mapNotNull { it.receivedOn?.year }.distinct().sortedDescending()
+data class ReceivedBreakdown(val total: Double, val buckets: List<ReceivedBucket>) {
+    val count: Int get() = buckets.sumOf { it.count }
+}
+
+/** Undated last: it is a caveat on the history, not a period in it. */
+const val NO_DATE_BUCKET = "No date recorded"
+
+fun receivedBreakdown(payments: List<Payment>): ReceivedBreakdown {
+    val byYear = payments
+        .filter { it.receivedOn != null }
+        .groupBy { it.receivedOn!!.year }
+        .toSortedMap(compareByDescending { it })
+        .map { (year, rows) ->
+            ReceivedBucket("$year", rows.sumOf { it.amountReceived }, rows.size)
+        }
+
+    val undated = payments.filter { it.receivedOn == null }
+    val buckets =
+        if (undated.isEmpty()) byYear
+        else byYear + ReceivedBucket(
+            NO_DATE_BUCKET,
+            undated.sumOf { it.amountReceived },
+            undated.size,
+        )
+
+    return ReceivedBreakdown(total = buckets.sumOf { it.amount }, buckets = buckets)
+}
 
 /** Total spend. Expenses are stored amounts; nothing here is derived. */
 fun totalExpenses(expenses: List<Expense>): Double =
