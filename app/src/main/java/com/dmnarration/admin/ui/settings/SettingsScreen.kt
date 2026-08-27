@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,16 +40,35 @@ fun SettingsScreen(
     refreshing: Boolean,
     error: String?,
     onRefresh: () -> Unit,
+    /** Non-null when opened as an overlay from the floating button. */
+    onBack: (() -> Unit)? = null,
 ) {
     val c = DmnTheme.colors
 
     Column {
-        Text(
-            "Settings",
-            style = DmnType.TitleLg,
-            color = c.textPrimary,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
-        )
+        Row(
+            Modifier.padding(start = 4.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // A way out, because this is now a layer rather than a tab. Without it
+            // the only exit is the system back gesture, which is a thing a screen
+            // should offer rather than assume.
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = c.textMuted,
+                    )
+                }
+            }
+            Text(
+                "Settings",
+                style = DmnType.TitleLg,
+                color = c.textPrimary,
+                modifier = Modifier.padding(start = if (onBack != null) 0.dp else 12.dp),
+            )
+        }
 
         if (error != null) {
             Text(

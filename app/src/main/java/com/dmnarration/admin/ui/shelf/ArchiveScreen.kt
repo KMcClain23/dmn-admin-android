@@ -64,13 +64,6 @@ fun ArchiveScreen(
     var restoring by remember { mutableStateOf<ArchivedCard?>(null) }
 
     Column {
-        Text(
-            "Archive",
-            style = DmnType.TitleLg,
-            color = c.textPrimary,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
-        )
-
         // A failed read and a refused write say different things and are shown
         // separately. Folding them into one line would let "could not restore
         // that card" look like the list itself is wrong.

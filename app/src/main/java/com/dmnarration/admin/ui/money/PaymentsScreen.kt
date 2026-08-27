@@ -50,13 +50,6 @@ fun PaymentsScreen(
     val c = DmnTheme.colors
 
     Column {
-        Text(
-            "Payments",
-            style = DmnType.TitleLg,
-            color = c.textPrimary,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
-        )
-
         state.paymentsError?.let {
             Text(
                 it,

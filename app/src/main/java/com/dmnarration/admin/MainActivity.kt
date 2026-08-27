@@ -13,6 +13,17 @@ import com.dmnarration.admin.ui.agenda.AgendaScreen
 import com.dmnarration.admin.ui.settings.SettingsScreen
 import com.dmnarration.admin.ui.shelf.ArchiveScreen
 import com.dmnarration.admin.ui.shelf.ReleasedScreen
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.dmnarration.admin.ui.components.DmnNavigationBar
+import com.dmnarration.admin.ui.components.NavItem
+import com.dmnarration.admin.ui.money.MoneyScreen
+import com.dmnarration.admin.ui.shelf.ShelfScreen
 import com.dmnarration.admin.ui.shelf.ShelfViewModel
 import com.dmnarration.admin.domain.Capabilities
 import com.dmnarration.admin.ui.money.ExpensesScreen
@@ -172,14 +183,21 @@ private fun AppRoot(modifier: Modifier = Modifier) {
  * Released and Archive sit either side of Settings because they are both
  * histories rather than work: one is what shipped, the other is what stopped.
  */
-private enum class Destination(val label: String) {
-    TODAY("Today"),
-    BOARD("Board"),
-    RELEASED("Released"),
-    ARCHIVE("Archive"),
-    PAYMENTS("Paid"),
-    EXPENSES("Spent"),
-    SETTINGS("Settings"),
+private enum class Destination(val label: String, val icon: ImageVector) {
+    TODAY("Today", Icons.Default.Today),
+    BOARD("Board", Icons.Default.Dashboard),
+    /**
+     * Released and Archive together.
+     *
+     * NOT "Shelf", which was the obvious name and is not true of half its
+     * contents: a released book is on a shelf, an abandoned one is not. "History"
+     * covers both honestly — work that shipped and work that stopped are both
+     * things that are no longer in front of Dean. The tabs inside say which is
+     * which, so the group label only has to be a true superset.
+     */
+    HISTORY("History", Icons.Default.Inventory2),
+    /** Payments and Expenses. The card detail screen already calls this MONEY. */
+    MONEY("Money", Icons.Default.Payments),
 }
 
 /**
@@ -197,7 +215,7 @@ private enum class Destination(val label: String) {
 private fun destinationsFor(capabilities: Capabilities): List<Destination> =
     Destination.entries.filter {
         when (it) {
-            Destination.PAYMENTS, Destination.EXPENSES -> capabilities.canSeeMoney
+            Destination.MONEY -> capabilities.canSeeMoney
             else -> true
         }
     }
@@ -223,8 +241,13 @@ private fun BoardRoute(
     // Hoisted here rather than inside BoardScreen so switching to Today and back
     // returns to the same tab, scrolled where it was.
     val pagerState = rememberPagerState(pageCount = { 2 })
+    // One per grouped destination, hoisted for the same reason the board's is:
+    // switching away and back returns to the section you were on.
+    val historyPager = rememberPagerState(pageCount = { 2 })
+    val moneyPager = rememberPagerState(pageCount = { 2 })
     val pipelineScroll = rememberLazyListState()
     val productionScroll = rememberLazyListState()
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(role) {
         vm.start(role)
@@ -241,8 +264,8 @@ private fun BoardRoute(
     // card changes both shelf lists, and without this the card is missing from
     // the board AND from the screen it moved to until someone pulls to refresh.
     LaunchedEffect(where) {
-        if (where == Destination.RELEASED || where == Destination.ARCHIVE) shelfVm.onShown()
-        if (where == Destination.PAYMENTS || where == Destination.EXPENSES) moneyVm.onShown()
+        if (where == Destination.HISTORY) shelfVm.onShown()
+        if (where == Destination.MONEY) moneyVm.onShown()
     }
 
     // A destination that stops existing must not stay selected. Reachable if a
@@ -271,35 +294,18 @@ private fun BoardRoute(
                     productionScroll = productionScroll,
                 )
 
-                Destination.RELEASED -> ReleasedScreen(
+                Destination.HISTORY -> ShelfScreen(
                     state = shelf,
-                    onRefresh = shelfVm::refresh,
-                    onOpenCard = { selectedCardId = it },
-                )
-
-                Destination.ARCHIVE -> ArchiveScreen(
-                    state = shelf,
+                    pagerState = historyPager,
                     onRefresh = shelfVm::refresh,
                     onUnarchive = shelfVm::unarchive,
                     onOpenCard = { selectedCardId = it },
                 )
 
-                Destination.PAYMENTS -> PaymentsScreen(
+                Destination.MONEY -> MoneyScreen(
                     state = money,
+                    pagerState = moneyPager,
                     onRefresh = moneyVm::refresh,
-                )
-
-                Destination.EXPENSES -> ExpensesScreen(
-                    state = money,
-                    onRefresh = moneyVm::refresh,
-                )
-
-                Destination.SETTINGS -> SettingsScreen(
-                    settings = state.site,
-                    loading = state.loading,
-                    refreshing = state.refreshing,
-                    error = state.error,
-                    onRefresh = vm::refresh,
                 )
 
                 Destination.TODAY -> AgendaScreen(
@@ -315,20 +321,33 @@ private fun BoardRoute(
             }
         }
 
-        NavigationBar(containerColor = com.dmnarration.admin.ui.theme.Surface) {
-            for (d in destinations) {
-                NavigationBarItem(
+        DmnNavigationBar(
+            onSettings = { settingsOpen = true },
+            items = destinations.map { d ->
+                NavItem(
+                    label = d.label,
+                    icon = d.icon,
                     selected = where == d,
                     onClick = { where = d },
-                    icon = {},
-                    label = { Text(d.label, style = DmnType.BodyMedium) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedTextColor = DmnTheme.colors.accentAmber,
-                        unselectedTextColor = DmnTheme.colors.textMuted,
-                        indicatorColor = SurfaceRaised,
-                    ),
                 )
-            }
+            },
+        )
+    }
+
+    // Settings, layered over whatever is underneath rather than replacing a tab.
+    // It is read-only and consulted rarely, which is exactly why it stopped being
+    // worth a permanent slot in a bar that had no width left.
+    if (settingsOpen) {
+        BackHandler { settingsOpen = false }
+        Box(Modifier.fillMaxSize().background(Background)) {
+            SettingsScreen(
+                settings = state.site,
+                loading = state.loading,
+                refreshing = state.refreshing,
+                error = state.error,
+                onRefresh = vm::refresh,
+                onBack = { settingsOpen = false },
+            )
         }
     }
 

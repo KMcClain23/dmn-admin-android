@@ -56,14 +56,14 @@ fun ReleasedScreen(
     val c = DmnTheme.colors
 
     Column {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp)) {
-            Text("Released", style = DmnType.TitleLg, color = c.textPrimary)
+        // No screen title: the tab above already says "Released", and repeating it
+        // costs a line of vertical space on a phone for no information.
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
             if (!state.releasedLoading && state.releasedError == null) {
                 Text(
                     countLabel(state),
                     style = DmnType.Small,
                     color = c.textMuted,
-                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
