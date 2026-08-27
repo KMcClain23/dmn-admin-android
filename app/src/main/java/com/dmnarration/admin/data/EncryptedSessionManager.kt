@@ -10,6 +10,15 @@ import io.github.jan.supabase.auth.user.UserSession
 import kotlinx.serialization.json.Json
 
 /**
+ * Whether a credential is on this device — including "cannot tell".
+ *
+ * A missing store and a store that refuses to be read are different facts, and only
+ * one of them means a fresh install. Collapsing them sends someone whose keystore is
+ * temporarily unavailable to the sign-in screen as though they had never signed in.
+ */
+enum class StoredSession { PRESENT, ABSENT, UNKNOWN }
+
+/**
  * Where the signed-in session is kept between launches.
  *
  * supabase-kt's default writes the session to plain SharedPreferences. That is
@@ -93,12 +102,52 @@ class EncryptedSessionManager(
      * currently be validated — the difference between "sign in" and "you are
      * signed in, the network is down".
      */
-    fun hasStoredSession(): Boolean =
-        runCatching { prefs?.contains(KEY_SESSION) == true }.getOrDefault(false)
+    fun storedSession(): StoredSession {
+        val store = prefs ?: return StoredSession.UNKNOWN
+        return runCatching {
+            if (store.contains(KEY_SESSION)) StoredSession.PRESENT else StoredSession.ABSENT
+        }.getOrElse {
+            // NOT ABSENT. This function exists to tell a fresh install from a session
+            // that cannot currently be validated, and answering "absent" when the
+            // question could not be asked discards exactly that distinction — which
+            // the doc comment above states as the whole point.
+            Log.w(TAG, "could not read the session store", it)
+            StoredSession.UNKNOWN
+        }
+    }
+
+    /**
+     * Whether the last [deleteSession] actually removed anything.
+     *
+     * Read once and reset by [takeDeleteFailure]. This exists because the
+     * SessionManager contract returns Unit, so a failed delete had no way to reach
+     * the caller and was swallowed entirely — not even logged. Sign-out then reported
+     * success while the token stayed on disk, which is the one outcome a sign-out
+     * must never get wrong.
+     */
+    @Volatile
+    private var deleteFailure: Throwable? = null
+
+    /** Takes the pending failure, if any, and clears it. */
+    fun takeDeleteFailure(): Throwable? = deleteFailure.also { deleteFailure = null }
 
     override suspend fun deleteSession() {
-        val store = prefs ?: return
-        runCatching { store.edit().remove(KEY_SESSION).apply() }
+        deleteFailure = null
+        val store = prefs
+        if (store == null) {
+            // No store means nothing is persisted, which is the desired end state.
+            return
+        }
+        runCatching {
+            store.edit().remove(KEY_SESSION).commit().also { committed ->
+                // commit() reports, apply() does not. A sign-out is the one write
+                // worth waiting for an answer on.
+                if (!committed) error("the session store refused the write")
+            }
+        }.onFailure {
+            Log.e(TAG, "could not remove the stored session", it)
+            deleteFailure = it
+        }
     }
 
     private companion object {

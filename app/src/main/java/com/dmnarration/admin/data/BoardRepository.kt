@@ -231,14 +231,26 @@ class SupabaseStudioSettingsRepository @Inject constructor(
             }
             .decodeList<SiteSettingDto>()
         val map = rows.mapNotNull { r -> r.value?.let { r.key to it } }.toMap()
+        val rawMonths = map[SettingKeys.AVAILABLE_MONTHS]
+        // Parsed without sorting: the stored order IS the booking window. Null when
+        // the value cannot be read as months, which is not the same as no months —
+        // `.orEmpty()` used to render both as "None".
+        val months = rawMonths
+            ?.trim()?.removePrefix("[")?.removeSuffix("]")
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.let { parts ->
+                val ints = parts.mapNotNull { it.toIntOrNull() }
+                if (ints.size == parts.size && ints.all { it in 1..12 }) ints else null
+            }
+
         SiteSettings(
             acceptingProjects = map[SettingKeys.ACCEPTING_PROJECTS]?.toBooleanStrictOrNull(),
-            // Parsed without sorting. The stored order IS the booking window.
-            availableMonths = map[SettingKeys.AVAILABLE_MONTHS]
-                ?.trim()?.removePrefix("[")?.removeSuffix("]")
-                ?.split(',')
-                ?.mapNotNull { it.trim().toIntOrNull() }
-                .orEmpty(),
+            availableMonths = months,
+            availableMonthsRaw = rawMonths?.takeIf { months == null },
+            acceptingProjectsRaw = map[SettingKeys.ACCEPTING_PROJECTS]
+                ?.takeIf { it.toBooleanStrictOrNull() == null },
             studio = studioSettingsFrom(map),
         )
     }

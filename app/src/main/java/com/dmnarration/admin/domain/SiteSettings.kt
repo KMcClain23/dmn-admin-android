@@ -12,7 +12,11 @@ package com.dmnarration.admin.domain
  */
 data class SiteSettings(
     val acceptingProjects: Boolean?,
-    val availableMonths: List<Int>,
+    /** Null when the stored value could not be read as months. See [availableMonthsLabel]. */
+    val availableMonths: List<Int>?,
+    /** The raw stored value, so an unreadable one can be shown rather than hidden. */
+    val availableMonthsRaw: String?,
+    val acceptingProjectsRaw: String?,
     val studio: StudioSettings,
 )
 
@@ -53,20 +57,36 @@ fun monthName(month: Int): String =
  *
  * Never sorted. A non-contiguous list is listed in its own order rather than being
  * forced into a range that would misdescribe it.
+ *
+ * A null list means the stored value could not be read as months at all, and that is
+ * NOT the same as an empty booking window. Both used to render "None": one says Dean
+ * takes no work, the other says nobody knows. The raw value is shown instead, because
+ * a value that cannot be parsed is still evidence.
  */
-fun availableMonthsLabel(months: List<Int>): String {
-    if (months.isEmpty()) return "None"
-    val window = monthWindow(months)
-    return if (window != null && months.size > 1) {
-        "${monthName(window.first)} – ${monthName(window.second)}"
-    } else {
-        months.joinToString(", ") { monthName(it) }
+fun availableMonthsLabel(months: List<Int>?, raw: String? = null): String = when {
+    months == null -> raw?.let { "Unreadable: $it" } ?: "Could not be read"
+    months.isEmpty() -> "None"
+    else -> {
+        val window = monthWindow(months)
+        if (window != null && months.size > 1) {
+            "${monthName(window.first)} – ${monthName(window.second)}"
+        } else {
+            months.joinToString(", ") { monthName(it) }
+        }
     }
 }
 
-/** A state, not a boolean. `true` on a screen is a value; this is an answer. */
-fun acceptingProjectsLabel(accepting: Boolean?): String = when (accepting) {
-    true -> "Open to new projects"
-    false -> "Not taking new projects"
-    null -> "Not set"
+/**
+ * A state, not a boolean. `true` on a screen is a value; this is an answer.
+ *
+ * The unreadable case is distinct from the unset one. `toBooleanStrictOrNull()`
+ * answers null for "TRUE" and for "1" as readily as for a missing key, and rendering
+ * both as "Not set" says the question was never answered when in fact the answer was
+ * not understood.
+ */
+fun acceptingProjectsLabel(accepting: Boolean?, raw: String? = null): String = when {
+    accepting == true -> "Open to new projects"
+    accepting == false -> "Not taking new projects"
+    raw != null -> "Unreadable: $raw"
+    else -> "Not set"
 }

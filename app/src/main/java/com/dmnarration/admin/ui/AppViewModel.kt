@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dmnarration.admin.data.ProfileUnusableException
 import com.dmnarration.admin.data.SessionRepository
+import com.dmnarration.admin.data.SignOutOutcome
+import com.dmnarration.admin.data.signOutMessage
 import com.dmnarration.admin.data.SessionState
 import com.dmnarration.admin.domain.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -164,7 +166,15 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             resolvedUserId = null
             _signInError.value = null
-            sessions.signOutByUser()
+            // A sign-out that could not discard the credential must say so. The user
+            // believes they are off this device; being wrong about that silently is
+            // the worst outcome this app has, and until now it was invisible — the
+            // store's refusal was swallowed and sign-out reported success either way.
+            val outcome = sessions.signOutByUser()
+            if (outcome is SignOutOutcome.CredentialMayRemain) {
+                Log.e(TAG, "sign-out could not remove the stored session", outcome.cause)
+            }
+            _signInError.value = signOutMessage(outcome)
             _state.value = AuthState.SignedOut
         }
     }
@@ -202,6 +212,7 @@ class AppViewModel @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "AppViewModel"
         val SETTLE_TIMEOUT = 10.seconds
     }
 }

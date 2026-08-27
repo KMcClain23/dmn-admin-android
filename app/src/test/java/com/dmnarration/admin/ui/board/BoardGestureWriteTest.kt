@@ -81,6 +81,8 @@ class BoardGestureWriteTest {
             com.dmnarration.admin.domain.SiteSettings(
                 acceptingProjects = true,
                 availableMonths = listOf(11, 12, 1, 2),
+                availableMonthsRaw = null,
+                acceptingProjectsRaw = null,
                 studio = DEFAULT_STUDIO_SETTINGS,
             ),
         )

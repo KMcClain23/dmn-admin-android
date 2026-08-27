@@ -38,6 +38,62 @@ sealed interface SessionState {
 }
 
 /**
+ * What "not authenticated" means, given what is on the device.
+ *
+ * Pure so the three outcomes can be told apart in a test without a keystore. The
+ * whole point of this function is that they ARE three, not two: a store that cannot
+ * be read used to answer "absent" and land the user on a sign-in screen as though
+ * they had never signed in, which is "we could not find out" wearing "nothing to
+ * show".
+ */
+fun notAuthenticatedState(isSignOut: Boolean, stored: StoredSession): SessionState = when {
+    // Deliberate, or revoked by the server. Genuinely signed out.
+    isSignOut -> SessionState.NeedsSignIn
+
+    // Nothing stored: a fresh install, genuinely signed out.
+    stored == StoredSession.ABSENT -> SessionState.NeedsSignIn
+
+    // Something stored but unvalidatable. Leave it alone.
+    stored == StoredSession.PRESENT -> SessionState.Unreachable(
+        "Could not confirm your session. Showing the last board loaded.",
+    )
+
+    // Could not read the store at all.
+    else -> SessionState.Unreachable(
+        "Could not read this device's saved session. Nothing has been signed out; try again.",
+    )
+}
+
+/**
+ * What the user is told after a sign-out.
+ *
+ * Null means nothing needs saying. Pure so the two outcomes can be shown to render
+ * differently without signing anybody out to find out.
+ */
+fun signOutMessage(outcome: SignOutOutcome): String? = when (outcome) {
+    is SignOutOutcome.Cleared -> null
+    is SignOutOutcome.CredentialMayRemain ->
+        "Signed out, but the saved session could not be removed from this device. " +
+            "Clear the app's storage before handing the phone on."
+}
+
+/**
+ * What a sign-out actually achieved locally.
+ *
+ * A sign-out that could not discard the credential must say so. The user believes
+ * they are off this device, and being wrong about that silently is the worst outcome
+ * this app has — worse than any read failing, because it is invisible and it is about
+ * someone else's access.
+ *
+ * It was invisible until now: the SessionManager contract returns Unit, so a store
+ * that refused the write had no way to report it, and sign-out said "done" either way.
+ */
+sealed interface SignOutOutcome {
+    data object Cleared : SignOutOutcome
+    data class CredentialMayRemain(val cause: Throwable) : SignOutOutcome
+}
+
+/**
  * Sign-in, sign-out, and the role that governs everything else.
  *
  * ─── the rule this file exists to enforce ───────────────────────────────────
@@ -98,14 +154,7 @@ class SessionRepository @Inject constructor(
         )
 
         is SessionStatus.NotAuthenticated ->
-            if (status.isSignOut || !sessionStore.hasStoredSession()) {
-                // Deliberate, revoked, or a fresh install — all genuinely signed out.
-                SessionState.NeedsSignIn
-            } else {
-                // Not authenticated, yet something is still stored. Treat that as
-                // unvalidatable rather than as a decision, and leave it alone.
-                SessionState.Unreachable("Could not confirm your session. Showing the last board loaded.")
-            }
+            notAuthenticatedState(status.isSignOut, sessionStore.storedSession())
     }
 
     val currentEmail: String? get() = client.auth.currentUserOrNull()?.email
@@ -125,11 +174,26 @@ class SessionRepository @Inject constructor(
      * cannot and must not, so the server call is best effort and clearSession()
      * is unconditional.
      */
-    suspend fun signOutByUser() {
+    suspend fun signOutByUser(): SignOutOutcome {
         runCatching { client.auth.signOut() }
             .onFailure { Log.w(TAG, "could not revoke the session server-side", it) }
-        runCatching { client.auth.clearSession() }
+
+        val cleared = runCatching { client.auth.clearSession() }
             .onFailure { Log.e(TAG, "could not clear the local session", it) }
+
+        // Two ways the local credential can survive: clearSession() throwing, or the
+        // store refusing the write underneath it. The second used to be invisible —
+        // deleteSession() swallowed it and returned Unit — so sign-out reported
+        // success while the token stayed on disk.
+        val storeFailure = sessionStore.takeDeleteFailure()
+
+        return if (cleared.isSuccess && storeFailure == null) {
+            SignOutOutcome.Cleared
+        } else {
+            SignOutOutcome.CredentialMayRemain(
+                cleared.exceptionOrNull() ?: storeFailure ?: IllegalStateException("unknown"),
+            )
+        }
     }
 
     /**

@@ -91,8 +91,8 @@ private fun LazyListScope.body(s: SiteSettings) {
     item {
         Group("Availability") {
             // A state, not "true".
-            Setting("Status", acceptingProjectsLabel(s.acceptingProjects))
-            Setting("Booking window", availableMonthsLabel(s.availableMonths))
+            Setting("Status", acceptingProjectsLabel(s.acceptingProjects, s.acceptingProjectsRaw))
+            Setting("Booking window", availableMonthsLabel(s.availableMonths, s.availableMonthsRaw))
         }
     }
 
