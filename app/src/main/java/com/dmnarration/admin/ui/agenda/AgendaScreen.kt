@@ -20,6 +20,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.dmnarration.admin.domain.Agenda
 import com.dmnarration.admin.domain.AgendaItem
+import com.dmnarration.admin.domain.AgendaReason
+import com.dmnarration.admin.domain.relativeDeadline
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.DUE_SOON_DAYS
 import com.dmnarration.admin.domain.daysUntil
@@ -102,36 +104,25 @@ fun AgendaScreen(
                     return@list
                 }
 
-                group("Late", agenda.late.size) {
-                    items(agenda.late) { LateRow(it, agenda.today, onOpenCard) }
-                }
-                group("Recording today", agenda.recordingToday.size) {
-                    items(agenda.recordingToday) { RecordingRow(it, onOpenCard) }
-                }
-                group("Due within $DUE_SOON_DAYS days", agenda.dueSoon.size) {
-                    items(agenda.dueSoon) { DueRow(it, agenda.today, onOpenCard) }
+                for (reason in AgendaReason.entries) {
+                    val group = agenda.grouped(reason)
+                    if (group.isEmpty()) continue
+                    item(key = "h_$reason") { GroupHeading(heading(reason)) }
+                    items(count = group.size) { AgendaRow(group[it], agenda.today, onOpenCard) }
                 }
             },
         )
     }
 }
 
-/** A heading plus its rows, emitted only when the group has something in it. */
-private fun LazyListScope.group(label: String, count: Int, rows: LazyListScope.() -> Unit) {
-    if (count == 0) return
-    item(key = "h_$label") {
-        Text(
-            label.uppercase(),
-            style = DmnType.Label,
-            color = DmnTheme.colors.textFaint,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-    }
-    rows()
-}
-
-private fun <T> LazyListScope.items(list: List<T>, row: @Composable (T) -> Unit) {
-    items(count = list.size) { row(list[it]) }
+@Composable
+private fun GroupHeading(label: String) {
+    Text(
+        label.uppercase(),
+        style = DmnType.Label,
+        color = DmnTheme.colors.textFaint,
+        modifier = Modifier.padding(top = 4.dp),
+    )
 }
 
 @Composable
@@ -181,6 +172,7 @@ private fun AgendaCard(
     card: BoardCard,
     onOpenCard: (BoardCard) -> Unit,
     trailing: @Composable () -> Unit,
+    body: @Composable () -> Unit = {},
 ) {
     val c = DmnTheme.colors
     Column(
@@ -203,6 +195,7 @@ private fun AgendaCard(
             trailing()
         }
         ProgressLine(card)
+        body()
     }
 }
 
@@ -242,44 +235,69 @@ private fun ProgressLine(card: BoardCard) {
     }
 }
 
+/**
+ * One book, once.
+ *
+ * The card sits under its highest-priority reason and carries the others as chips.
+ * Every relative date on this screen — the trailing figure and the chips alike — goes
+ * through `relativeDeadline`, because two formatters would disagree on a boundary day
+ * and only one of them would be right.
+ */
 @Composable
-private fun LateRow(card: BoardCard, today: LocalDate, onOpenCard: (BoardCard) -> Unit) {
-    AgendaCard(card, onOpenCard) {
-        val days = card.deadline?.let { daysBetween(it, today) } ?: 0
-        Text(
-            if (days == 1) "1 day late" else "$days days late",
-            style = DmnType.Small,
-            color = AlertRed,
-        )
+private fun AgendaRow(item: AgendaItem, today: LocalDate, onOpenCard: (BoardCard) -> Unit) {
+    val c = DmnTheme.colors
+    AgendaCard(item.card, onOpenCard, trailing = {
+        when (item.primary) {
+            AgendaReason.LATE -> Text(
+                item.card.deadline?.let { relativeDeadline(it, today) } ?: "late",
+                style = DmnType.Small,
+                color = AlertRed,
+            )
+            AgendaReason.RECORDING_TODAY -> Text(
+                item.hours?.let { "%.1f hrs".format(it) } ?: "scheduled",
+                style = DmnType.Small,
+                color = c.accentAmberBright,
+            )
+            AgendaReason.DUE_SOON -> Text(
+                item.card.deadline?.let { relativeDeadline(it, today) } ?: "due",
+                style = DmnType.Small,
+                color = c.textMuted,
+            )
+        }
+    }) {
+        if (item.secondary.isEmpty()) return@AgendaCard
+        Row(
+            Modifier.padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for (reason in item.secondary) {
+                Text(
+                    chipLabel(reason, item, today),
+                    style = DmnType.Pill,
+                    color = c.pillNeutralText,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(c.pillNeutralBg)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
     }
 }
 
-@Composable
-private fun RecordingRow(item: AgendaItem, onOpenCard: (BoardCard) -> Unit) {
-    AgendaCard(item.card, onOpenCard) {
-        Text(
-            item.hours?.let { "%.1f hrs".format(it) } ?: "scheduled",
-            style = DmnType.Small,
-            color = DmnTheme.colors.accentAmberBright,
-        )
-    }
+private fun heading(reason: AgendaReason): String = when (reason) {
+    AgendaReason.LATE -> "Late"
+    AgendaReason.RECORDING_TODAY -> "Recording today"
+    AgendaReason.DUE_SOON -> "Due within $DUE_SOON_DAYS days"
 }
 
-@Composable
-private fun DueRow(card: BoardCard, today: LocalDate, onOpenCard: (BoardCard) -> Unit) {
-    AgendaCard(card, onOpenCard) {
-        val days = card.deadline?.let { daysBetween(today, it) } ?: 0
-        Text(
-            when (days) {
-                0 -> "due today"
-                1 -> "due tomorrow"
-                else -> "in $days days"
-            },
-            style = DmnType.Small,
-            color = DmnTheme.colors.textMuted,
-        )
+/** Chips share the section rows' formatter, deliberately. */
+private fun chipLabel(reason: AgendaReason, item: AgendaItem, today: LocalDate): String =
+    when (reason) {
+        AgendaReason.LATE -> item.card.deadline?.let { relativeDeadline(it, today) } ?: "late"
+        AgendaReason.RECORDING_TODAY -> "recording today"
+        AgendaReason.DUE_SOON -> item.card.deadline?.let { relativeDeadline(it, today) } ?: "due"
     }
-}
 
 private val MONTH_ABBR = listOf(
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

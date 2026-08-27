@@ -80,9 +80,7 @@ data class BoardUiState(
      */
     val agenda: Agenda = Agenda(
         today = currentDay(),
-        recordingToday = emptyList(),
-        dueSoon = emptyList(),
-        late = emptyList(),
+        items = emptyList(),
         weekHours = 0.0,
         monthHours = 0.0,
     ),

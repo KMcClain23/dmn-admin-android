@@ -31,25 +31,49 @@ val PRE_DELIVERY = setOf("contracted", "prepping", "recording")
 /** How far ahead a deadline is worth seeing beside today's work. */
 const val DUE_SOON_DAYS = 7
 
-/** A book scheduled for today, with the hours its plan asks of today. */
+/**
+ * Why a book is on today's agenda. Declaration order IS priority order.
+ *
+ * Late first because it is the plan that already failed; recording-today is a plan
+ * still on track. A book qualifying for several reasons is grouped under its highest
+ * and carries the rest as chips — it is one book, and rendering it twice on a
+ * two-item screen is how the first cut of this looked.
+ */
+enum class AgendaReason { LATE, RECORDING_TODAY, DUE_SOON }
+
+/**
+ * One BOOK on the agenda, with the set of reasons it qualified today.
+ *
+ * Deliberately a book plus reasons rather than a row in a filtered per-section list.
+ * The filtered shape let A Cowboy's Runaway occupy two of the screen's two slots with
+ * near-identical content, and it would have done the same again the moment
+ * `first15_due` landed. As a reason set, a new commitment type is another member —
+ * not another section that reintroduces the duplication.
+ */
 data class AgendaItem(
     val card: BoardCard,
+    val reasons: Set<AgendaReason>,
+    /** Hours today's plan asks of this book. Only meaningful when it is recording today. */
     val hours: Double?,
-)
+) {
+    /** The group this card is rendered under: its highest-priority reason. */
+    val primary: AgendaReason get() = AgendaReason.entries.first { it in reasons }
+
+    /** Everything else it qualified for, rendered as chips on the same card. */
+    val secondary: List<AgendaReason>
+        get() = AgendaReason.entries.filter { it in reasons && it != primary }
+}
 
 data class Agenda(
     val today: LocalDate,
-    /** Books with today actually chosen as a recording day. */
-    val recordingToday: List<AgendaItem>,
-    /** Deadlines inside the next [DUE_SOON_DAYS], soonest first. */
-    val dueSoon: List<BoardCard>,
-    /** Past the delivery deadline and not yet delivered. See [isLate]. */
-    val late: List<BoardCard>,
+    /** One entry per distinct book. See [AgendaItem]. */
+    val items: List<AgendaItem>,
     val weekHours: Double,
     val monthHours: Double,
 ) {
-    val isEmpty: Boolean
-        get() = recordingToday.isEmpty() && dueSoon.isEmpty() && late.isEmpty()
+    fun grouped(reason: AgendaReason): List<AgendaItem> = items.filter { it.primary == reason }
+
+    val isEmpty: Boolean get() = items.isEmpty()
 }
 
 /**
@@ -101,64 +125,85 @@ fun buildAgenda(
 
     val weekEnd = endOfWeek(today)
     val monthEnd = endOfMonth(today)
+    val horizon = today.plus(DUE_SOON_DAYS, DateTimeUnit.DAY)
 
     var weekHours = 0.0
     var monthHours = 0.0
 
-    val recordingToday = mutableListOf<AgendaItem>()
+    val items = mutableListOf<AgendaItem>()
 
     for (card in considered) {
         val dates = card.recordingDates
+        var perDay: Double? = null
+
         // A book whose hours are merely spread across every weekday was never
         // planned for today, and counting it would turn the agenda into a list of
         // everything, always.
-        if (dates.isEmpty()) continue
+        if (dates.isNotEmpty()) {
+            perDay = narrationPlan(
+                NarrationInput(
+                    wordCount = card.wordCount,
+                    narrationFormat = card.narrationFormat,
+                    narratorSharePercent = card.narratorSharePercent,
+                    deadline = card.deadline,
+                    wordsPerNarrationHour = settings.wordsPerNarrationHour,
+                    wordsRecorded = card.wordsRecorded ?: 0,
+                    schedule = RecordingSchedule(dates = dates),
+                    today = today,
+                ),
+            )?.hoursPerDay
 
-        val plan = narrationPlan(
-            NarrationInput(
-                wordCount = card.wordCount,
-                narrationFormat = card.narrationFormat,
-                narratorSharePercent = card.narratorSharePercent,
-                deadline = card.deadline,
-                wordsPerNarrationHour = settings.wordsPerNarrationHour,
-                wordsRecorded = card.wordsRecorded ?: 0,
-                schedule = RecordingSchedule(dates = dates),
-                today = today,
-            ),
-        )
-        val perDay = plan?.hoursPerDay
-
-        // The week and month totals are the same per-day figure counted across every
-        // day the book occupies inside each span. Days already behind today are
-        // excluded: what is already spent is not a decision anyone can still make.
-        if (perDay != null) {
-            for (date in dates) {
-                if (date < today) continue
-                if (date <= weekEnd) weekHours += perDay
-                if (date <= monthEnd) monthHours += perDay
+            // The week and month totals are the same per-day figure counted across
+            // every day the book occupies inside each span. Days already behind
+            // today are excluded: what is already spent is not a decision anyone can
+            // still make.
+            if (perDay != null) {
+                for (date in dates) {
+                    if (date < today) continue
+                    if (date <= weekEnd) weekHours += perDay
+                    if (date <= monthEnd) monthHours += perDay
+                }
             }
         }
 
-        if (today in dates) recordingToday += AgendaItem(card, perDay)
+        // Every reason this book qualified, gathered before anything is grouped.
+        val reasons = buildSet {
+            if (isLate(card, today)) add(AgendaReason.LATE)
+            if (today in dates) add(AgendaReason.RECORDING_TODAY)
+            val deadline = card.deadline
+            if (deadline != null && deadline >= today && deadline <= horizon) {
+                add(AgendaReason.DUE_SOON)
+            }
+        }
+
+        if (reasons.isNotEmpty()) items += AgendaItem(card, reasons, perDay)
     }
-
-    val horizon = today.plus(DUE_SOON_DAYS, DateTimeUnit.DAY)
-    val dueSoon = considered
-        .filter { it.deadline != null && it.deadline >= today && it.deadline <= horizon }
-        .sortedBy { it.deadline }
-
-    val late = considered
-        .filter { isLate(it, today) }
-        .sortedBy { it.deadline }
 
     return Agenda(
         today = today,
-        recordingToday = recordingToday,
-        dueSoon = dueSoon,
-        late = late,
+        // Soonest deadline first within a group; a book with no deadline sorts last.
+        items = items.sortedWith(compareBy({ it.primary.ordinal }, { it.card.deadline })),
         weekHours = weekHours,
         monthHours = monthHours,
     )
+}
+
+/**
+ * How a deadline reads relative to today.
+ *
+ * ONE formatter, used by the due-soon rows, the late rows and the chips alike. Two
+ * would disagree on a boundary day — "due today" against "0 days late" — and only one
+ * of them would be right.
+ */
+fun relativeDeadline(deadline: LocalDate, today: LocalDate): String {
+    val days = daysUntil(deadline, today)
+    return when {
+        days < -1 -> "${-days} days late"
+        days == -1 -> "1 day late"
+        days == 0 -> "due today"
+        days == 1 -> "due tomorrow"
+        else -> "in $days days"
+    }
 }
 
 /**

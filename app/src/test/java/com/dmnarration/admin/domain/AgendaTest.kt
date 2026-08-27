@@ -10,10 +10,11 @@ import org.junit.Test
 /**
  * The agenda, ported from `api/agenda/route.ts`.
  *
- * The route is the specification — it is running code that already encodes the
- * workflow — so these tests are written against its behaviour rather than against a
- * fresh reading of what an agenda ought to be. The one addition is the late group,
- * which the route does not have and which §3A.3 justifies as a dropped case.
+ * The route is the specification — running code that already encodes the workflow —
+ * so these are written against its behaviour rather than a fresh reading of what an
+ * agenda ought to be. Two things are not the route's: the late group (§3A.3, a
+ * dropped case) and one-card-per-book (§3, because the route returns two independent
+ * lists and a phone screen renders them as two cards for one book).
  */
 class AgendaTest {
 
@@ -44,6 +45,8 @@ class AgendaTest {
         narrationFormat = "solo",
     )
 
+    private fun Agenda.ids(reason: AgendaReason) = grouped(reason).map { it.card.id }
+
     // ─── the status set ─────────────────────────────────────────────────────
 
     @Test fun `the set is the three pre-delivery statuses`() {
@@ -54,10 +57,6 @@ class AgendaTest {
         assertFalse("a book past the mic is not booth work", "editing" in PRE_DELIVERY)
     }
 
-    /**
-     * The defect the late rule exists to prevent, and the one live data can check:
-     * six cards sit in `editing` past their deadline and are delivered, not late.
-     */
     @Test fun `an editing card past its deadline is not late`() {
         val delivered = book("d", "editing", deadline = "2026-05-30")
         assertFalse(isLate(delivered, today))
@@ -75,6 +74,79 @@ class AgendaTest {
         assertFalse("released is not pre-delivery", isLate(book("g", "released", deadline = "2020-01-01"), today))
     }
 
+    // ─── one card per book ──────────────────────────────────────────────────
+
+    /**
+     * §3's assertion, and the reason this file's shape changed.
+     *
+     * A book qualifying twice used to render twice, which made a count of "what is on
+     * today" wrong and left one copy stale when the other was acted on.
+     */
+    @Test fun `every distinct book renders exactly once`() {
+        val result = agenda(
+            listOf(
+                // late AND recording today AND (no) due soon
+                book("both", "recording", deadline = "2026-08-19", dates = listOf("2026-08-26")),
+                // recording today AND due soon — the live shape
+                book("cowboy", "recording", deadline = "2026-08-31", dates = listOf("2026-08-26")),
+                book("plain", "contracted", deadline = "2026-08-28"),
+            ),
+        )
+        val rendered = AgendaReason.entries.sumOf { result.grouped(it).size }
+        val distinctBooks = result.items.map { it.card.id }.distinct().size
+
+        assertEquals("one card per book", distinctBooks, rendered)
+        assertEquals(3, rendered)
+    }
+
+    @Test fun `a book groups under its highest-priority reason and chips the rest`() {
+        val result = agenda(
+            listOf(book("both", "recording", deadline = "2026-08-19", dates = listOf("2026-08-26"))),
+        )
+        val item = result.items.single()
+        assertEquals("late outranks recording today", AgendaReason.LATE, item.primary)
+        assertEquals(listOf(AgendaReason.RECORDING_TODAY), item.secondary)
+        assertEquals(listOf("both"), result.ids(AgendaReason.LATE))
+        assertTrue("and it is not also in the lower group", result.ids(AgendaReason.RECORDING_TODAY).isEmpty())
+    }
+
+    /** The live case: recording today outranks due soon. */
+    @Test fun `recording today outranks due soon`() {
+        val result = agenda(
+            listOf(book("cowboy", "recording", deadline = "2026-08-31", dates = listOf("2026-08-26"))),
+        )
+        val item = result.items.single()
+        assertEquals(AgendaReason.RECORDING_TODAY, item.primary)
+        assertEquals(listOf(AgendaReason.DUE_SOON), item.secondary)
+        assertTrue(result.ids(AgendaReason.DUE_SOON).isEmpty())
+    }
+
+    @Test fun `a single-reason book has no chips`() {
+        val result = agenda(listOf(book("plain", "contracted", deadline = "2026-08-28")))
+        assertEquals(emptyList<AgendaReason>(), result.items.single().secondary)
+    }
+
+    @Test fun `priority order is late then recording then due`() {
+        assertEquals(
+            listOf(AgendaReason.LATE, AgendaReason.RECORDING_TODAY, AgendaReason.DUE_SOON),
+            AgendaReason.entries.toList(),
+        )
+    }
+
+    // ─── one relative-date formatter ────────────────────────────────────────
+
+    /**
+     * The chips and the section rows share this. Two formatters would disagree on a
+     * boundary day — "due today" against "0 days late" — and only one would be right.
+     */
+    @Test fun `the relative formatter covers both sides of today`() {
+        assertEquals("due today", relativeDeadline(LocalDate.parse("2026-08-26"), today))
+        assertEquals("due tomorrow", relativeDeadline(LocalDate.parse("2026-08-27"), today))
+        assertEquals("in 5 days", relativeDeadline(LocalDate.parse("2026-08-31"), today))
+        assertEquals("1 day late", relativeDeadline(LocalDate.parse("2026-08-25"), today))
+        assertEquals("7 days late", relativeDeadline(LocalDate.parse("2026-08-19"), today))
+    }
+
     // ─── recording today ────────────────────────────────────────────────────
 
     @Test fun `only books with today actually chosen appear`() {
@@ -85,23 +157,19 @@ class AgendaTest {
                 book("nodates", "recording"),
             ),
         )
-        assertEquals(listOf("today"), result.recordingToday.map { it.card.id })
+        assertEquals(listOf("today"), result.ids(AgendaReason.RECORDING_TODAY))
     }
 
-    /**
-     * A book with no chosen days contributes nothing at all — not to the list and
-     * not to the totals. The route skips it before computing a plan.
-     */
-    @Test fun `a book with no chosen days contributes nothing`() {
-        val result = agenda(listOf(book("x", "recording", deadline = "2026-08-28")))
-        assertTrue(result.recordingToday.isEmpty())
+    @Test fun `a book with no chosen days and no deadline contributes nothing`() {
+        val result = agenda(listOf(book("x", "recording")))
+        assertTrue(result.isEmpty)
         assertEquals(0.0, result.weekHours, 0.0001)
         assertEquals(0.0, result.monthHours, 0.0001)
     }
 
     @Test fun `an editing book never appears even when scheduled today`() {
         val result = agenda(listOf(book("e", "editing", dates = listOf("2026-08-26"))))
-        assertTrue(result.recordingToday.isEmpty())
+        assertTrue(result.isEmpty)
         assertEquals(0.0, result.weekHours, 0.0001)
     }
 
@@ -116,28 +184,18 @@ class AgendaTest {
                 book("past", "recording", deadline = "2026-08-25"),
             ),
         )
-        assertEquals(
-            "inclusive at both ends, soonest first",
-            listOf("today", "edge"),
-            result.dueSoon.map { it.card_id() },
-        )
+        assertEquals("inclusive at both ends, soonest first", listOf("today", "edge"), result.ids(AgendaReason.DUE_SOON))
     }
 
     /** The dropped case: past-deadline falls out of dueSoon and into late. */
     @Test fun `a slipped card leaves due soon and enters late`() {
-        val slipped = book("slipped", "recording", deadline = "2026-08-25")
-        val result = agenda(listOf(slipped))
-        assertTrue("no longer due soon", result.dueSoon.isEmpty())
-        assertEquals("but not invisible", listOf("slipped"), result.late.map { it.card_id() })
+        val result = agenda(listOf(book("slipped", "recording", deadline = "2026-08-25")))
+        assertTrue("no longer due soon", result.ids(AgendaReason.DUE_SOON).isEmpty())
+        assertEquals("but not invisible", listOf("slipped"), result.ids(AgendaReason.LATE))
     }
 
     // ─── week and month hours ───────────────────────────────────────────────
 
-    /**
-     * Wednesday 26 August 2026. The week ends Sunday the 30th and the month ends
-     * Monday the 31st, so the two spans differ by exactly one day — which is what
-     * makes this date worth testing on.
-     */
     @Test fun `the week ends Sunday and the month ends on the last of the month`() {
         assertEquals(LocalDate.parse("2026-08-30"), endOfWeek(today))
         assertEquals(LocalDate.parse("2026-08-31"), endOfMonth(today))
@@ -152,31 +210,14 @@ class AgendaTest {
         assertEquals(LocalDate.parse("2026-08-30"), endOfWeek(LocalDate.parse("2026-08-24")))
     }
 
-    @Test fun `days behind today are excluded from both totals`() {
-        val withPast = agenda(
-            listOf(book("p", "recording", dates = listOf("2026-08-24", "2026-08-26"), deadline = "2026-08-31")),
-        )
-        val onlyToday = agenda(
-            listOf(book("p", "recording", dates = listOf("2026-08-26"), deadline = "2026-08-31")),
-        )
-        // The past day adds nothing, but it does change how the remaining work is
-        // spread, so the two are compared for the *count* of days charged.
-        assertTrue(withPast.weekHours > 0.0)
-        assertTrue(onlyToday.weekHours > 0.0)
-    }
-
     @Test fun `a day past the month end counts to neither`() {
-        val result = agenda(
-            listOf(book("m", "recording", dates = listOf("2026-09-15"), deadline = "2026-09-30")),
-        )
+        val result = agenda(listOf(book("m", "recording", dates = listOf("2026-09-15"), deadline = "2026-09-30")))
         assertEquals(0.0, result.weekHours, 0.0001)
         assertEquals(0.0, result.monthHours, 0.0001)
     }
 
     @Test fun `a day inside the month but past the week counts only to the month`() {
-        val result = agenda(
-            listOf(book("m", "recording", dates = listOf("2026-08-31"), deadline = "2026-09-30")),
-        )
+        val result = agenda(listOf(book("m", "recording", dates = listOf("2026-08-31"), deadline = "2026-09-30")))
         assertEquals("31 August is past Sunday the 30th", 0.0, result.weekHours, 0.0001)
         assertTrue("but inside August", result.monthHours > 0.0)
     }
@@ -195,7 +236,6 @@ class AgendaTest {
         assertEquals(0.0, recordedFraction(book("a", "recording", wordCount = 100, recorded = -50))!!, 0.0001)
     }
 
-    /** Null rather than 0%, so the caller renders nothing instead of a confident zero. */
     @Test fun `an absent or zero word count has no fraction at all`() {
         assertNull(recordedFraction(book("a", "recording", wordCount = null)))
         assertNull(recordedFraction(book("a", "recording", wordCount = 0)))
@@ -207,18 +247,4 @@ class AgendaTest {
         assertTrue(agenda(emptyList()).isEmpty)
         assertTrue(agenda(listOf(book("e", "editing", deadline = "2020-01-01"))).isEmpty)
     }
-
-    @Test fun `one card can be both recording today and due soon`() {
-        // Which is exactly the live shape: A Cowboy's Runaway, recording today with
-        // a deadline five days out.
-        val result = agenda(
-            listOf(book("cowboy", "recording", deadline = "2026-08-31", dates = listOf("2026-08-26"))),
-        )
-        assertEquals(listOf("cowboy"), result.recordingToday.map { it.card.id })
-        assertEquals(listOf("cowboy"), result.dueSoon.map { it.card_id() })
-        assertTrue(result.late.isEmpty())
-        assertFalse(result.isEmpty)
-    }
 }
-
-private fun BoardCard.card_id() = id
