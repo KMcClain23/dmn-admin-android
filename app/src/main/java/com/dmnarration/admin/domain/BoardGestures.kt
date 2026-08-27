@@ -1,49 +1,6 @@
 package com.dmnarration.admin.domain
 
 /**
- * The swipe-to-archive thresholds, ported from the web verbatim.
- *
- * Kept as arithmetic rather than gesture-modifier configuration so the numbers
- * can be tested without a device. The web's `useDrag` reports velocity in units
- * per millisecond and Compose reports it per second, which is exactly the sort
- * of conversion that silently makes a gesture twice as eager if it is done
- * inline and never checked.
- */
-object SwipeToArchive {
-    /** Past this displacement, releasing archives. Negative is leftward. */
-    const val THRESHOLD_DP = -90f
-
-    /** The card cannot be dragged further than this, in either direction. */
-    const val MAX_SWIPE_DP = -110f
-
-    /** The web's `vx > 0.5`, in units per millisecond. */
-    const val FLICK_PER_MS = 0.5f
-
-    /** Movement beyond this counts as a drag rather than a tap. */
-    const val DRAG_SLOP_DP = 5f
-
-    /** Leftward only, and never past the clamp. */
-    fun clampOffset(offsetDp: Float): Float = offsetDp.coerceIn(MAX_SWIPE_DP, 0f)
-
-    /**
-     * Whether releasing here archives the card.
-     *
-     * Either a slow drag past the threshold or a fast leftward flick, matching
-     * `pastThreshold || fastFlick`. A flick counts however short it was, which
-     * is the point of having it: the gesture should not require the full 90dp
-     * when the intent is unambiguous from the speed.
-     *
-     * `velocityDpPerSecond` is negative leftward, so the flick test is a lower
-     * bound rather than the web's magnitude comparison against a direction flag.
-     */
-    fun shouldArchive(offsetDp: Float, velocityDpPerSecond: Float): Boolean {
-        val pastThreshold = offsetDp < THRESHOLD_DP
-        val fastFlick = velocityDpPerSecond < -(FLICK_PER_MS * 1000f)
-        return pastThreshold || fastFlick
-    }
-}
-
-/**
  * Why a card was archived.
  *
  * "Recasted" here and the `recast` status are sequential, not two names for one

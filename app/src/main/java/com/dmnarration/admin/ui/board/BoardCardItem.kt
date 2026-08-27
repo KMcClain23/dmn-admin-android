@@ -2,16 +2,6 @@ package com.dmnarration.admin.ui.board
 
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.offset
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
-import com.dmnarration.admin.domain.SwipeToArchive
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -105,7 +95,6 @@ fun BoardCardItem(
     onClick: () -> Unit,
     onToggleFirst15: () -> Unit = {},
     onLongPress: () -> Unit = {},
-    onSwipeArchive: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val c = DmnTheme.colors
@@ -113,70 +102,17 @@ fun BoardCardItem(
     val format = card.narrationFormat?.takeIf { it != "solo" }
 
     // Gestures only exist for a session that may write. Without this an editor
-    // could long-press into a menu of things the server would refuse, or swipe a
-    // card away and watch it come back.
+    // could long-press into a menu of things the server would refuse.
     val gesturesEnabled = capabilities.canEdit
-    val density = LocalDensity.current
-    var offsetDp by remember(card.id) { mutableFloatStateOf(0f) }
 
     Box(modifier.fillMaxWidth().height(CARD_HEIGHT)) {
-        if (offsetDp < 0f) ArchiveAffordance()
-
         Box(
             Modifier
-                .offset { IntOffset(with(density) { offsetDp.dp.roundToPx() }, 0) }
                 .fillMaxWidth()
                 .height(CARD_HEIGHT)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Surface)
                 .border(1.dp, SurfaceBorder, RoundedCornerShape(8.dp))
-                .then(
-                    if (gesturesEnabled) {
-                        Modifier.pointerInput(card.id) {
-                            detectHorizontalDragGestures(
-                                onDragEnd = {
-                                    // Velocity is not available from this
-                                    // detector, so displacement is the only
-                                    // route here; the flick is covered by the
-                                    // threshold once the drag has travelled.
-                                    if (SwipeToArchive.shouldArchive(offsetDp, 0f)) {
-                                        offsetDp = SwipeToArchive.MAX_SWIPE_DP
-                                        onSwipeArchive()
-                                    } else {
-                                        offsetDp = 0f
-                                    }
-                                },
-                                onDragCancel = { offsetDp = 0f },
-                            ) { change, drag ->
-                                // Belt and braces, and honestly labelled: it
-                                // is NOT what makes the card win.
-                                //
-                                // This card sits inside a HorizontalPager that
-                                // claims horizontal drags of its own, so who
-                                // owns this gesture is a real question. Deleting
-                                // this line was mutation-tested and changed
-                                // nothing — both halves of SwipeVersusPagerTest
-                                // stayed green. The arbitration actually comes
-                                // from detectHorizontalDragGestures, which
-                                // consumes the slop crossing internally, plus
-                                // descendant-before-ancestor dispatch. So this
-                                // is insurance against the detector changing,
-                                // not the mechanism.
-                                //
-                                // The guarantee lives in SwipeVersusPagerTest,
-                                // which asserts the behaviour rather than this
-                                // line: a swipe on the card archives without
-                                // paging, and a drag on bare pager surface pages
-                                // without archiving. Consuming horizontal drags
-                                // one level higher up turns both of those red.
-                                change.consume()
-                                offsetDp = SwipeToArchive.clampOffset(
-                                    offsetDp + with(density) { drag.toDp().value },
-                                )
-                            }
-                        }
-                    } else Modifier,
-                )
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = if (gesturesEnabled) onLongPress else null,

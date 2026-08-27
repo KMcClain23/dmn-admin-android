@@ -229,7 +229,6 @@ fun BoardScreen(
                         onOpenCard = onOpenCard,
                         onToggleFirst15 = onToggleFirst15,
                         onLongPress = { actionCard = it },
-                        onSwipeArchive = { archiveCard = it },
                     )
                 }
             },
@@ -278,7 +277,6 @@ private fun SectionList(
     onOpenCard: (BoardCard) -> Unit,
     onToggleFirst15: (String) -> Unit,
     onLongPress: (BoardCard) -> Unit,
-    onSwipeArchive: (BoardCard) -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -302,7 +300,6 @@ private fun SectionList(
                         onClick = { onOpenCard(cards[i]) },
                         onToggleFirst15 = { onToggleFirst15(cards[i].id) },
                         onLongPress = { onLongPress(cards[i]) },
-                        onSwipeArchive = { onSwipeArchive(cards[i]) },
                     )
                 }
             }

@@ -1,16 +1,10 @@
 package com.dmnarration.admin.ui.board
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -22,12 +16,10 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.dmnarration.admin.domain.ArchiveReason
 import com.dmnarration.admin.domain.BoardAction
@@ -35,11 +27,9 @@ import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.actionsFor
 import com.dmnarration.admin.ui.components.DmnTextField
 import com.dmnarration.admin.ui.theme.AlertRed
-import com.dmnarration.admin.ui.theme.Background
 import com.dmnarration.admin.ui.theme.DmnTheme
 import com.dmnarration.admin.ui.theme.DmnType
 import com.dmnarration.admin.ui.theme.Surface
-import com.dmnarration.admin.ui.theme.SurfaceBorder
 
 /**
  * The long-press menu.
@@ -186,24 +176,3 @@ fun ArchiveConfirmDialog(
 }
 
 /** The affordance revealed behind a card as it swipes left. */
-@Composable
-fun ArchiveAffordance(modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Background),
-        contentAlignment = Alignment.CenterEnd,
-    ) {
-        Box(
-            Modifier
-                .padding(end = 16.dp)
-                .size(72.dp, 32.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Surface),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Archive", style = DmnType.Pill, color = AlertRed, textAlign = TextAlign.Center)
-        }
-    }
-}

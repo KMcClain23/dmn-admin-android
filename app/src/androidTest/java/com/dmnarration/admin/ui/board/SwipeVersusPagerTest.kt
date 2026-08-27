@@ -30,35 +30,35 @@ import kotlin.time.Instant
 /**
  * Who owns a horizontal drag: the card, or the pager underneath it.
  *
- * Swipe-to-archive lives inside a HorizontalPager that claims horizontal drags
- * of its own. In practice the card wins, and probably by rule rather than luck —
- * a descendant sees the Main pass before its ancestor. But nothing in the source
- * said so and nothing failed if it stopped being true, which is the shape of
- * every bug this project has found. This is the thing that fails.
+ * THE NAME OUTLIVED THE GESTURE, DELIBERATELY. There is no swipe-to-archive any
+ * more — it was removed because it took horizontal drags away from the pager, so
+ * paging between Pipeline and In Production only worked from the gaps between
+ * cards. Archiving moved to the long-press action sheet, where it already
+ * existed as a menu item; the swipe had only ever been a second, hidden route to
+ * the same confirmation dialog.
  *
- * BOTH HALVES ARE ASSERTED, and the second is the one that matters. A "fix" that
- * consumes every horizontal drag in the subtree silently kills paging, and a test
- * that only checked the card could not tell a working arbitration from a broken
- * pager.
+ * The file keeps its name because the QUESTION is unchanged and only the ANSWER
+ * flipped, and that flip is the thing worth recording. A deleted test would
+ * leave no trace that the opposite was once true and deliberate; this one fails
+ * if anyone reintroduces a horizontal gesture on a card. If you came here
+ * looking for the swipe, this paragraph is why you will not find it.
  *
- * WHAT THE MUTATIONS ESTABLISHED, recorded because two of them were surprises:
+ * BOTH HALVES ARE ASSERTED. Half one now says a drag starting ON A CARD reaches
+ * the pager and fires no card action — the inverse of what it asserted through
+ * Stages 2 to 8. Half two is unchanged: a drag starting on bare list surface
+ * pages and archives nothing.
+ *
+ * WHAT THE MUTATIONS ESTABLISHED WHEN THE SWIPE STILL EXISTED, kept because the
+ * findings outlast the gesture and two of them were surprises:
  *
  *   - Deleting the explicit `change.consume()` in BoardCardItem: BOTH HALVES
- *     STAYED GREEN. That line is not what makes the card win — the detector
- *     consumes the slop crossing itself. It is labelled as insurance there
- *     rather than as the mechanism, because a comment claiming otherwise is a
- *     false landmark for whoever reads it next.
- *   - Removing the card's swipe handling entirely: half one goes red, half two
- *     stays green. So half one is not vacuous, and half two is correctly
- *     indifferent to whether the card has a gesture at all.
- *   - Consuming horizontal drags one level up, on the list: BOTH go red, half
- *     two reporting "the pager must have paged". That is the over-broad fix,
- *     and it is the failure this test exists to produce.
- *
- * Half one's "the pager did not page" also held when the card consumed nothing,
- * so that clause is not by itself discriminating. It is kept because it is the
- * behaviour we actually require, and it is what would catch a Compose upgrade
- * that reversed dispatch order — the scenario none of the mutations can simulate.
+ *     STAYED GREEN. That line was never what made the card win — the detector
+ *     consumed the slop crossing itself.
+ *   - Removing the card's swipe handling entirely: half one went red, half two
+ *     stayed green. That mutation is now the shipped state, which is exactly why
+ *     half one had to be inverted rather than deleted.
+ *   - Consuming horizontal drags one level up, on the list: BOTH went red. That
+ *     is the over-broad fix, and half two still exists to produce that failure.
  */
 class SwipeVersusPagerTest {
 
@@ -95,7 +95,8 @@ class SwipeVersusPagerTest {
         createdAt = Instant.parse("2026-01-01T00:00:00Z"),
     )
 
-    private var archiveCalls = 0
+    /** Any card-level action firing from a drag. Must stay at zero throughout. */
+    private var cardActionCalls = 0
     private var pageAfter = -1
 
     /**
@@ -123,7 +124,12 @@ class SwipeVersusPagerTest {
                                     settings = settings,
                                     today = today,
                                     onClick = {},
-                                    onSwipeArchive = { archiveCalls++ },
+                                    // Every card action now goes through the
+                                    // long-press sheet. If a horizontal drag
+                                    // ever fires one of these again, half one
+                                    // catches it.
+                                    onLongPress = { cardActionCalls++ },
+                                    onToggleFirst15 = { cardActionCalls++ },
                                     modifier = Modifier.testTag("card"),
                                 )
                             }
@@ -137,19 +143,29 @@ class SwipeVersusPagerTest {
     }
 
     private fun setUp() {
-        archiveCalls = 0
+        cardActionCalls = 0
         compose.setContent { Harness() }
         compose.waitForIdle()
     }
 
-    // ─── half one: the card owns a drag that starts on the card ─────────────
+    // ─── half one: the PAGER owns a drag that starts on the card ────────────
 
+    /**
+     * The inverse of what this asserted through Stages 2 to 8.
+     *
+     * It used to require that a swipe on a card archived it and the pager did
+     * not move. Both clauses are now wrong by design: a horizontal drag belongs
+     * to the pager wherever it starts, including on top of a card, which is the
+     * whole point of removing the swipe. Dean could not page between tabs
+     * without finding a gap between cards.
+     */
     @Test
-    fun aSwipeOnTheCardArchivesAndDoesNotChangeThePage() {
+    fun aDragStartingOnTheCardPagesAndFiresNoCardAction() {
         setUp()
 
         compose.onNodeWithTag("card").performTouchInput {
-            // Past the -90dp threshold, well inside the card.
+            // The same gesture the old test used, from the same place on the
+            // card. Only the expected outcome changed.
             swipe(
                 start = Offset(width * 0.9f, height / 2f),
                 end = Offset(width * 0.1f, height / 2f),
@@ -158,10 +174,14 @@ class SwipeVersusPagerTest {
         }
         compose.waitForIdle()
 
-        assertEquals("the swipe must reach the card's archive path", 1, archiveCalls)
         assertEquals(
-            "the pager must not have paged — the card consumed the drag",
+            "a horizontal drag must not fire any card action — there is no card gesture",
             0,
+            cardActionCalls,
+        )
+        assertEquals(
+            "the pager must have paged: a drag starting on a card belongs to it now",
+            1,
             pageAfter,
         )
     }
@@ -192,9 +212,9 @@ class SwipeVersusPagerTest {
         compose.waitForIdle()
 
         assertEquals(
-            "a drag that never touched the card must not archive anything",
+            "a drag that never touched the card must not fire a card action",
             0,
-            archiveCalls,
+            cardActionCalls,
         )
         assertEquals("the pager must have paged", 1, pageAfter)
     }
