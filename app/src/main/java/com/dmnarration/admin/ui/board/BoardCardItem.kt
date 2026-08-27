@@ -23,9 +23,11 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.Capabilities
+import com.dmnarration.admin.domain.actionsFor
 import com.dmnarration.admin.domain.NarrationInput
 import com.dmnarration.admin.domain.RecordingSchedule
 import com.dmnarration.admin.domain.StudioSettings
@@ -104,6 +107,11 @@ fun BoardCardItem(
     // Gestures only exist for a session that may write. Without this an editor
     // could long-press into a menu of things the server would refuse.
     val gesturesEnabled = capabilities.canEdit
+    // Hidden when the sheet would open nothing. `actionsFor` cannot currently
+    // return empty — it always appends Mark as Released and Archive — so this
+    // branch is unreachable today and is a guard against that changing, not a
+    // state anyone can reach. Recorded rather than left to look load-bearing.
+    val actions = remember(card.id, card.status) { actionsFor(card) }
 
     Box(modifier.fillMaxWidth().height(CARD_HEIGHT)) {
         Box(
@@ -266,6 +274,39 @@ fun BoardCardItem(
                 modifier = Modifier
                     .size(14.dp)
                     .align(Alignment.TopEnd),
+            )
+        }
+
+        /*
+         * A visible route to the sheet long-press already opens.
+         *
+         * Not a second code path — the same `onLongPress` handler, reached by a
+         * tap instead of a hold. Until now the sheet was the only way to reach
+         * five of the six card actions and had no affordance at all: the swipe's
+         * ArchiveAffordance drew DURING the drag, so only someone already
+         * performing the gesture ever saw it. Dean could not find archiving in
+         * the app until he was told it was there.
+         *
+         * BOTTOM-END, diagonally opposite the confidential lock and well clear of
+         * the First-15 checkbox in the middle of the text column. That checkbox is
+         * already a nested tap target on a card whose primary action is
+         * tap-to-open, and Dean has hit it by accident once; putting a second
+         * small target beside it would make that worse rather than better.
+         *
+         * Gated on the same capability as the sheet: an editor must not see a
+         * control that opens actions the server would refuse.
+         */
+        if (gesturesEnabled && actions.isNotEmpty()) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "Card actions",
+                tint = c.textMuted,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(onClick = onLongPress)
+                    .padding(4.dp)
+                    .size(18.dp),
             )
         }
     }
