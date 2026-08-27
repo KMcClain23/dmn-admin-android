@@ -4,6 +4,8 @@ import com.dmnarration.admin.data.BoardAccessNotEnabledException
 import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.domain.ArchivedCard
 import com.dmnarration.admin.domain.BoardCard
+import com.dmnarration.admin.domain.Expense
+import com.dmnarration.admin.domain.Payment
 import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.ReleasedBook
 import com.dmnarration.admin.domain.UserRole
@@ -77,6 +79,10 @@ class ShelfViewModelTest {
         override suspend fun archived(): Result<List<ArchivedCard>> =
             archivedFailure?.let { Result.failure(it) } ?: Result.success(archivedRows)
 
+        // Stage 8 additions. Present so the compiler enforces that this fake
+        // covers the whole interface; these tests do not exercise money.
+        override suspend fun payments() = Result.success(emptyList<Payment>())
+        override suspend fun expenses() = Result.success(emptyList<Expense>())
         override suspend fun unarchive(cardId: String): Result<ArchivedCard?> {
             unarchived += cardId
             writeFailure?.let { return Result.failure(it) }

@@ -4,6 +4,8 @@ import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.data.StudioSettingsRepository
 import com.dmnarration.admin.domain.ArchivedCard
 import com.dmnarration.admin.domain.BoardCard
+import com.dmnarration.admin.domain.Expense
+import com.dmnarration.admin.domain.Payment
 import com.dmnarration.admin.domain.ReleasedBook
 import com.dmnarration.admin.domain.DEFAULT_STUDIO_SETTINGS
 import com.dmnarration.admin.domain.STATUS_RELEASED
@@ -72,6 +74,10 @@ class BoardGestureWriteTest {
             })
         }
 
+        // Stage 8 additions. Present so the compiler enforces that this fake
+        // covers the whole interface; these tests do not exercise money.
+        override suspend fun payments() = Result.success(emptyList<Payment>())
+        override suspend fun expenses() = Result.success(emptyList<Expense>())
         // Stage 6 additions. Present so the compiler enforces that this fake
         // covers the whole interface; these tests do not exercise the shelf.
         override suspend fun released() = Result.success(emptyList<ReleasedBook>())

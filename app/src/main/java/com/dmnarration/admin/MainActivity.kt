@@ -14,6 +14,10 @@ import com.dmnarration.admin.ui.settings.SettingsScreen
 import com.dmnarration.admin.ui.shelf.ArchiveScreen
 import com.dmnarration.admin.ui.shelf.ReleasedScreen
 import com.dmnarration.admin.ui.shelf.ShelfViewModel
+import com.dmnarration.admin.domain.Capabilities
+import com.dmnarration.admin.ui.money.ExpensesScreen
+import com.dmnarration.admin.ui.money.MoneyViewModel
+import com.dmnarration.admin.ui.money.PaymentsScreen
 import com.dmnarration.admin.ui.theme.SurfaceRaised
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -173,8 +177,30 @@ private enum class Destination(val label: String) {
     BOARD("Board"),
     RELEASED("Released"),
     ARCHIVE("Archive"),
+    PAYMENTS("Paid"),
+    EXPENSES("Spent"),
     SETTINGS("Settings"),
 }
+
+/**
+ * The destinations this account actually has.
+ *
+ * Payments and Expenses are ABSENT for a non-admin, not disabled and not empty.
+ * A disabled tab advertises a room the account may not enter; an empty one says
+ * there is no money, which is a claim about Dean's finances nobody made.
+ *
+ * This is the first time `Capabilities` hides a whole destination rather than a
+ * field — the architecture it was built for in Stage 0. It is the second layer:
+ * the server refuses these reads independently, and would still refuse if this
+ * list were wrong.
+ */
+private fun destinationsFor(capabilities: Capabilities): List<Destination> =
+    Destination.entries.filter {
+        when (it) {
+            Destination.PAYMENTS, Destination.EXPENSES -> capabilities.canSeeMoney
+            else -> true
+        }
+    }
 
 @Composable
 private fun BoardRoute(
@@ -185,6 +211,8 @@ private fun BoardRoute(
     val state by vm.state.collectAsStateWithLifecycle()
     val shelfVm: ShelfViewModel = hiltViewModel()
     val shelf by shelfVm.state.collectAsStateWithLifecycle()
+    val moneyVm: MoneyViewModel = hiltViewModel()
+    val money by moneyVm.state.collectAsStateWithLifecycle()
     // An id rather than a card: Released and Archive open the same detail sheet
     // from rows that are not BoardCards, and `card_detail()` only ever needed
     // the id. Holding a whole card here would have meant three overlays, or one
@@ -201,6 +229,7 @@ private fun BoardRoute(
     LaunchedEffect(role) {
         vm.start(role)
         shelfVm.start(role)
+        moneyVm.start(role)
     }
     // A restored card belongs on the board again, and the board is the only
     // thing that can put it there.
@@ -213,6 +242,16 @@ private fun BoardRoute(
     // the board AND from the screen it moved to until someone pulls to refresh.
     LaunchedEffect(where) {
         if (where == Destination.RELEASED || where == Destination.ARCHIVE) shelfVm.onShown()
+        if (where == Destination.PAYMENTS || where == Destination.EXPENSES) moneyVm.onShown()
+    }
+
+    // A destination that stops existing must not stay selected. Reachable if a
+    // role is re-resolved downward while the phone is sitting on Payments —
+    // without this the tab bar would show no selection and the screen would keep
+    // rendering data the account may no longer see.
+    val destinations = destinationsFor(state.capabilities)
+    LaunchedEffect(destinations) {
+        if (where !in destinations) where = Destination.BOARD
     }
 
     Column(Modifier.fillMaxSize().background(Background)) {
@@ -245,6 +284,16 @@ private fun BoardRoute(
                     onOpenCard = { selectedCardId = it },
                 )
 
+                Destination.PAYMENTS -> PaymentsScreen(
+                    state = money,
+                    onRefresh = moneyVm::refresh,
+                )
+
+                Destination.EXPENSES -> ExpensesScreen(
+                    state = money,
+                    onRefresh = moneyVm::refresh,
+                )
+
                 Destination.SETTINGS -> SettingsScreen(
                     settings = state.site,
                     loading = state.loading,
@@ -267,7 +316,7 @@ private fun BoardRoute(
         }
 
         NavigationBar(containerColor = com.dmnarration.admin.ui.theme.Surface) {
-            for (d in Destination.entries) {
+            for (d in destinations) {
                 NavigationBarItem(
                     selected = where == d,
                     onClick = { where = d },

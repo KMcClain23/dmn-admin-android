@@ -1,6 +1,8 @@
 package com.dmnarration.admin.data
 
 import com.dmnarration.admin.domain.ArchivedCard
+import com.dmnarration.admin.domain.Expense
+import com.dmnarration.admin.domain.Payment
 import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.ReleasedBook
 import com.dmnarration.admin.domain.UNARCHIVE_COLUMNS
@@ -79,6 +81,17 @@ interface BoardRepository {
      * the row and arrives wearing HTTP 200.
      */
     suspend fun unarchive(cardId: String): Result<ArchivedCard?>
+
+    /**
+     * Money that has moved. NOT what is owed — nothing in this app computes that.
+     *
+     * Refusal is [BoardAccessNotEnabledException], never an empty list: a
+     * financial screen showing nothing must never be reachable by failing.
+     */
+    suspend fun payments(): Result<List<Payment>>
+
+    /** Every expense, as stored. Refusal is an exception, not zero rows. */
+    suspend fun expenses(): Result<List<Expense>>
 }
 
 /**
@@ -214,9 +227,36 @@ class SupabaseBoardRepository @Inject constructor(
             ?.toDomain()
     }
 
+    /**
+     * Order comes from the function: `received_on desc nulls last`, then
+     * sort_order, then label. Re-sorting here would be a second opinion about
+     * an ordering the database already states.
+     */
+    override suspend fun payments(): Result<List<Payment>> = runCatching {
+        try {
+            client.postgrest.rpc(PAYMENTS_RPC)
+                .decodeList<PaymentDto>()
+                .map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
+    override suspend fun expenses(): Result<List<Expense>> = runCatching {
+        try {
+            client.postgrest.rpc(EXPENSES_RPC)
+                .decodeList<ExpenseDto>()
+                .map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
     private companion object {
         const val BOARD_RPC = "board_for_session"
         const val CARD_RPC = "card_detail"
+        const val PAYMENTS_RPC = "payments_for_session"
+        const val EXPENSES_RPC = "expenses_for_session"
         const val RELEASED_RPC = "released_for_session"
         const val ARCHIVED_RPC = "archived_for_session"
 

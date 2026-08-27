@@ -64,6 +64,25 @@ data class Capabilities(
      * happens, which is a different question from whether they may edit.
      */
     val canUseWebAdmin: Boolean,
+    /**
+     * Whether Payments and Expenses exist for this account at all.
+     *
+     * The first capability that hides a WHOLE TAB rather than a field, which is
+     * the architecture this type was built for in Stage 0 and has been carrying
+     * without ever gating anything. It earns itself here because both screens
+     * are financial end to end — there is no non-financial content to keep, so
+     * per-field gating has nothing to gate and the honest unit is the tab.
+     *
+     * Distinct from `canViewFinancials`, which decides whether a rate appears on
+     * a card that is otherwise perfectly readable. Same role answer today; two
+     * different questions, and merging them would mean a future role that may
+     * see a card's earnings automatically gets the whole ledger.
+     *
+     * ABSENT, not disabled and not empty. A disabled tab advertises a room the
+     * account may not enter; an empty one says there is no money, which is a
+     * claim about Dean's finances that nobody made.
+     */
+    val canSeeMoney: Boolean,
 ) {
     companion object {
         fun of(role: UserRole): Capabilities = when (role) {
@@ -73,6 +92,7 @@ data class Capabilities(
                 canViewConfidentialCovers = true,
                 canEdit = true,
                 canUseWebAdmin = true,
+                canSeeMoney = true,
             )
             UserRole.EDITOR -> Capabilities(
                 canViewFinancials = false,
@@ -80,6 +100,7 @@ data class Capabilities(
                 canViewConfidentialCovers = false,
                 canEdit = false,
                 canUseWebAdmin = false,
+                canSeeMoney = false,
             )
             UserRole.UNKNOWN -> Capabilities(
                 canViewFinancials = false,
@@ -87,6 +108,7 @@ data class Capabilities(
                 canViewConfidentialCovers = false,
                 canEdit = false,
                 canUseWebAdmin = false,
+                canSeeMoney = false,
             )
         }
     }
