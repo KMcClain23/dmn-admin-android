@@ -131,13 +131,54 @@ private fun LazyListScope.detailBody(
 ) {
     item { Header(d, capabilities) }
 
-    d.description?.let { item { Section("Description") { Body(it) } } }
+    // ONE row per field, in the groups the web modal decided. There is no
+    // separate Edit section any more: these rows are both the summary and the
+    // editor, which is what stops a value having two representations.
+    for (group in CardFieldGroup.entries) {
+        // Money carries rates and shares, behind the same capability that used
+        // to hide the Money summary rather than a second rule about who sees what.
+        if (group == CardFieldGroup.Money && !capabilities.canViewFinancials) continue
+        val fields = CARD_FIELDS.filter { it.group == group }
+        if (fields.isEmpty()) continue
+        item {
+            Section(group.title) {
+                Column {
+                    for (field in fields) {
+                        CardFieldRow(
+                            field = field,
+                            detail = d,
+                            canEdit = capabilities.canEdit,
+                            write = state.writeFor(field.column),
+                            onSave = { onSaveField(field.column, it) },
+                            onEdit = { onEditField(field.column) },
+                        )
+                    }
+                    // Facts that belong beside these fields and that nobody
+                    // edits here. They take no chevron, which is what makes
+                    // them legible as "not editable" rather than unresponsive.
+                    if (group == CardFieldGroup.Money) {
+                        ReadOnlyFieldRow(
+                            "Words recorded",
+                            d.wordsRecorded?.let { "%,d".format(it) },
+                            reason = "Derived from pages, or entered on the web.",
+                        )
+                    }
+                    if (group == CardFieldGroup.Timing) {
+                        ReadOnlyFieldRow("Added", d.createdAt?.let(::instantDate))
+                        if (d.recordingDates.isNotEmpty()) {
+                            ReadOnlyFieldRow(
+                                "Recording days",
+                                "${d.recordingDates.size}",
+                                reason = d.recordingDates.sorted().joinToString(", ") { shortDate(it) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     d.notes?.let { item { Section("Notes") { Body(it) } } }
-
-    item { Section("Dates") { Dates(d) } }
-    item { Section("Production") { Production(d, capabilities) } }
-
-    if (capabilities.canViewFinancials) item { Section("Money") { Money(d) } }
 
     if (d.tags.isNotEmpty()) item { Section("Tags") { Chips(d.tags) } }
     if (d.triggerWarnings.isNotEmpty()) {
@@ -145,31 +186,29 @@ private fun LazyListScope.detailBody(
     }
     if (d.chapters.isNotEmpty()) item { Section("Chapters (${d.chapters.size})") { Chapters(d.chapters) } }
 
-    val links = buildList {
-        d.audibleLink?.let { add("Audible" to it) }
-        d.arLink?.let { add("AR" to it) }
-        d.spotifyLink?.let { add("Spotify" to it) }
-        d.scriptUrl?.let { add("Script" to it) }
-        // `links` is not null on the table and empty on every row today. Rendered
-        // only when it holds something, rather than a section for data that does
-        // not exist.
-        d.links.forEachIndexed { i, l -> add("Link ${i + 1}" to l) }
+    // `links` is not null on the table and empty on every row today. Rendered
+    // only when it holds something, rather than a section for data that does
+    // not exist. The four named links are editable fields above.
+    if (d.links.isNotEmpty()) {
+        item { Section("Other links") { Links(d.links.mapIndexed { i, l -> "Link ${i + 1}" to l }) } }
     }
-    if (links.isNotEmpty()) item { Section("Links") { Links(links) } }
 
-    // Editing lives BELOW the read-only summary rather than replacing it. The
-    // summary hides empty rows, which is right for reading and wrong for
-    // editing — a field Dean cannot see is one he cannot fill in, and the
-    // errand this stage exists for is correcting a MISSING word count.
     item {
-        Section("Edit") {
-            CardEditSection(
-                detail = d,
-                capabilities = capabilities,
-                writeFor = state::writeFor,
-                onSave = onSaveField,
-                onEdit = onEditField,
-            )
+        Section("Not editable on the phone yet") {
+            Column {
+                for (shape in DEFERRED_SHAPES) ReadOnlyFieldRow(shape.label, null, shape.reason)
+            }
+        }
+    }
+    item {
+        Section("Written elsewhere") {
+            Column {
+                ReadOnlyFieldRow(
+                    "Amazon rating",
+                    d.amazonRating?.let { "$it ★" + (d.amazonReviewCount?.let { n -> " ($n)" } ?: "") },
+                    reason = "Written by the nightly job.",
+                )
+            }
         }
     }
 }
@@ -258,89 +297,6 @@ private fun Body(text: String) {
     Text(text, style = DmnType.Body, color = DmnTheme.colors.textBody)
 }
 
-@Composable
-private fun Field(label: String, value: String?, struck: Boolean = false) {
-    if (value.isNullOrBlank()) return
-    val c = DmnTheme.colors
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, style = DmnType.Body, color = c.textMuted)
-        Text(
-            value,
-            style = DmnType.Body,
-            color = c.textPrimary,
-            textDecoration = if (struck) TextDecoration.LineThrough else null,
-        )
-    }
-}
-
-@Composable
-private fun Dates(d: CardDetail) {
-    Column {
-        Field("Deadline", d.deadline?.let(::longDate))
-        Field("First 15 due", d.first15Due?.let(::longDate), struck = d.first15Complete)
-        Field("First 15", if (d.first15Complete) "Complete" else "Outstanding")
-        // "Released" beside a status chip reading Editing asserts the book is out
-        // when it is not. The date is a fact — it was released and came back — so the
-        // label carries the tense rather than the row being hidden.
-        Field(
-            if (d.status == "released") "Released" else "Previously released",
-            d.releasedAt?.let(::instantDate),
-        )
-        Field("Added", d.createdAt?.let(::instantDate))
-        if (d.recordingDates.isNotEmpty()) {
-            Field("Recording days", "${d.recordingDates.size}")
-            Text(
-                d.recordingDates.sorted().joinToString(", ") { shortDate(it) },
-                style = DmnType.Small,
-                color = DmnTheme.colors.textDim,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun Production(d: CardDetail, capabilities: Capabilities) {
-    Column {
-        Field("Format", d.narrationFormat?.replaceFirstChar { it.uppercase() })
-        Field("Type", d.productionType?.replaceFirstChar { it.uppercase() })
-        Field("Company", d.productionCompany)
-        Field("Word count", d.wordCount?.let { "%,d".format(it) })
-        Field("Words recorded", d.wordsRecorded?.let { "%,d".format(it) })
-        if (d.amazonRating != null) {
-            Field("Amazon", "${d.amazonRating} ★" + (d.amazonReviewCount?.let { " ($it)" } ?: ""))
-        }
-    }
-}
-
-@Composable
-private fun Money(d: CardDetail) {
-    Column {
-        Field("Payment", paymentLabel(d.paymentType))
-        Field("PFH rate", d.pfhRate?.let { "$%.2f".format(it) })
-        Field("Narrator share", d.narratorSharePercent?.let { "$it%" })
-        Field("Royalty split", d.royaltySplitPercent?.let { "$it%" })
-    }
-}
-
-/**
- * Chips that wrap by WIDTH, not by count.
- *
- * This was `values.chunked(3)` inside a `Column` of `Row`s — three chips per line
- * whatever their length. A Row does not wrap, so when the three did not fit, the
- * first child took the full width and the later ones were measured against nothing
- * left: their text wrapped to roughly one character per line, producing a tall,
- * nearly-invisible column that read as a third of a screen of blank space, with the
- * following row of chips stranded beneath it looking like an orphaned section.
- *
- * `How an Angel Dies: Wrath` is the worst board-reachable case — nine warnings, the
- * longest 49 characters, and its middle chunk was 122 characters asked to share one
- * line.
- *
- * FlowRow is the component that actually expresses the intent, and it removes the
- * fixed count entirely rather than tuning it.
- */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Chips(values: List<String>) {
     val c = DmnTheme.colors
@@ -433,10 +389,8 @@ private fun paymentLabel(raw: String?): String? = when (raw) {
     else -> raw
 }
 
-private val MONTH_ABBR = listOf(
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-)
-
+// MONTH_ABBR and longDate live in CardFields, which needs them to format the
+// value a row DISPLAYS. One copy, so a date cannot read one way in a row and
+// another in a summary — the divergence this screen was just rebuilt to remove.
 private fun shortDate(d: LocalDate) = "${MONTH_ABBR[d.month.number - 1]} ${d.day}"
-private fun longDate(d: LocalDate) = "${MONTH_ABBR[d.month.number - 1]} ${d.day}, ${d.year}"
 private fun instantDate(i: Instant) = longDate(i.toLocalDateTime(TimeZone.currentSystemDefault()).date)

@@ -1,7 +1,11 @@
 package com.dmnarration.admin.ui.detail
 
 import com.dmnarration.admin.domain.CardDetail
+import com.dmnarration.admin.domain.parseCoNarrators
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * Every editable field on a card, in one list.
@@ -43,8 +47,20 @@ data class CardField(
     val choices: List<CardChoice> = emptyList(),
     /** A sentence under the field, where the web carries one worth keeping. */
     val help: String? = null,
-    /** Current value as the editor should show it; empty string means unset. */
+    /** Current value as the EDITOR should show it; empty string means unset. */
     val read: (CardDetail) -> String,
+    /**
+     * Current value as the ROW should read it — formatted the way the card
+     * always formatted it: "Sep 24, 2026", "Duet", "$250.00", "Ann Dahlia".
+     *
+     * Separate from [read] because the two jobs genuinely differ: a date picker
+     * wants 2026-09-24 and a person wants Sep 24, 2026. Keeping both on ONE
+     * field is what lets there be one row. The previous shape had a formatted
+     * read-only row in the summary and a raw editable row in a second section,
+     * which is two representations of one value — and the raw one, which nobody
+     * chose, is what Dean saw.
+     */
+    val display: (CardDetail) -> String = read,
 )
 
 enum class CardFieldGroup(val title: String) {
@@ -56,6 +72,17 @@ enum class CardFieldGroup(val title: String) {
     Content("Content"),
     Links("Links"),
 }
+
+
+internal val MONTH_ABBR = listOf(
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
+
+/** "Sep 24, 2026" — the form the card has always used for a date. */
+internal fun longDate(d: LocalDate) = "${MONTH_ABBR[d.month.number - 1]} ${d.day}, ${d.year}"
+
+private fun choiceLabel(choices: List<CardChoice>, raw: String?): String =
+    choices.find { it.value == raw }?.label ?: raw.orEmpty()
 
 private fun LocalDate?.orEmpty(): String = this?.toString() ?: ""
 private fun Int?.orEmpty(): String = this?.toString() ?: ""
@@ -107,10 +134,17 @@ val CARD_FIELDS: List<CardField> = listOf(
         kind = CardFieldKind.Integer,
         help = "Feeds hours, earnings and the career total. 1,000–500,000, or empty.",
         read = { it.wordCount.orEmpty() },
+        display = { it.wordCount?.let { n -> "%,d".format(n) } ?: "" },
     ),
 
-    CardField("title", "Book title", CardFieldGroup.Details, CardFieldKind.Text) { it.title },
-    CardField("subtitle", "Subtitle", CardFieldGroup.Details, CardFieldKind.Text) { it.subtitle ?: "" },
+    CardField(
+        column = "title", label = "Book title", group = CardFieldGroup.Details, kind = CardFieldKind.Text,
+        read = { it.title },
+    ),
+    CardField(
+        column = "subtitle", label = "Subtitle", group = CardFieldGroup.Details, kind = CardFieldKind.Text,
+        read = { it.subtitle ?: "" },
+    ),
     CardField(
         column = "is_confidential",
         label = "Confidential",
@@ -120,8 +154,20 @@ val CARD_FIELDS: List<CardField> = listOf(
         read = { if (it.isConfidential) "true" else "false" },
     ),
 
-    CardField("author", "Author", CardFieldGroup.People, CardFieldKind.Text) { it.author },
-    CardField("co_narrator", "Co-narrators", CardFieldGroup.People, CardFieldKind.Text) { it.coNarrator ?: "" },
+    CardField(
+        column = "author", label = "Author", group = CardFieldGroup.People, kind = CardFieldKind.Text,
+        read = { it.author },
+    ),
+    CardField(
+        column = "co_narrator",
+        label = "Co-narrators",
+        group = CardFieldGroup.People,
+        kind = CardFieldKind.Text,
+        read = { it.coNarrator ?: "" },
+        // The column stores a JSON array. Rendering it raw put ["Ann Dahlia"]
+        // on screen; the summary had always parsed it, and now one row does.
+        display = { parseCoNarrators(it.coNarrator).joinToString(", ") },
+    ),
     CardField(
         column = "narration_format",
         label = "Narration format",
@@ -130,11 +176,27 @@ val CARD_FIELDS: List<CardField> = listOf(
         choices = NARRATION_FORMAT_CHOICES,
         help = "Duet and Dual halve the narrator's share unless a share is set.",
         read = { it.narrationFormat ?: "" },
+        display = { choiceLabel(NARRATION_FORMAT_CHOICES, it.narrationFormat) },
     ),
 
-    CardField("status", "Status", CardFieldGroup.Timing, CardFieldKind.Choice, STATUS_CHOICES) { it.status },
-    CardField("deadline", "Deadline", CardFieldGroup.Timing, CardFieldKind.Date) { it.deadline.orEmpty() },
-    CardField("first15_due", "First 15 due", CardFieldGroup.Timing, CardFieldKind.Date) { it.first15Due.orEmpty() },
+    CardField(
+        column = "status", label = "Status", group = CardFieldGroup.Timing,
+        kind = CardFieldKind.Choice, choices = STATUS_CHOICES,
+        read = { it.status },
+        display = { choiceLabel(STATUS_CHOICES, it.status) },
+    ),
+    CardField(
+        column = "deadline", label = "Deadline", group = CardFieldGroup.Timing,
+        kind = CardFieldKind.Date,
+        read = { it.deadline.orEmpty() },
+        display = { d -> d.deadline?.let(::longDate) ?: "" },
+    ),
+    CardField(
+        column = "first15_due", label = "First 15 due", group = CardFieldGroup.Timing,
+        kind = CardFieldKind.Date,
+        read = { it.first15Due.orEmpty() },
+        display = { d -> d.first15Due?.let(::longDate) ?: "" },
+    ),
     CardField(
         column = "first_15_complete",
         label = "First 15 approved",
@@ -149,6 +211,9 @@ val CARD_FIELDS: List<CardField> = listOf(
         kind = CardFieldKind.Date,
         help = "Anchored to Pacific noon by the database, so it matches the web exactly.",
         read = { it.releasedAt?.toString()?.take(10) ?: "" },
+        display = { d ->
+            d.releasedAt?.toLocalDateTime(TimeZone.currentSystemDefault())?.date?.let(::longDate) ?: ""
+        },
     ),
 
     CardField(
@@ -158,6 +223,7 @@ val CARD_FIELDS: List<CardField> = listOf(
         kind = CardFieldKind.Choice,
         choices = PRODUCTION_TYPE_CHOICES,
         read = { it.productionType ?: "" },
+        display = { choiceLabel(PRODUCTION_TYPE_CHOICES, it.productionType) },
     ),
     CardField(
         column = "production_company",
@@ -167,6 +233,32 @@ val CARD_FIELDS: List<CardField> = listOf(
         read = { it.productionCompany ?: "" },
     ),
 
+    // Pages sit in Production rather than Money, though word_count is in Money
+    // where the web puts it. Money is behind canViewFinancials, and progress is
+    // not a financial fact — gating it would hide how far a book has got from
+    // someone allowed to see the book.
+    CardField(
+        column = "total_pages",
+        label = "Total pages",
+        group = CardFieldGroup.Production,
+        kind = CardFieldKind.Integer,
+        help = "Sets the page line. Without it a book shows its percentage alone.",
+        read = { it.totalPages.orEmpty() },
+        display = { d -> d.totalPages?.let { "%,d".format(it) } ?: "" },
+    ),
+    CardField(
+        column = "current_page",
+        label = "Current page",
+        group = CardFieldGroup.Production,
+        kind = CardFieldKind.Integer,
+        // Writing this moves words_recorded, by trigger. Writing words_recorded
+        // directly clears it, because the page is then no longer known to be
+        // accurate. One writer, enforced rather than agreed.
+        help = "Updates words recorded. Also settable from Today while recording.",
+        read = { it.currentPage.orEmpty() },
+        display = { d -> d.currentPage?.let { "%,d".format(it) } ?: "" },
+    ),
+
     CardField(
         column = "payment_type",
         label = "Payment type",
@@ -174,8 +266,14 @@ val CARD_FIELDS: List<CardField> = listOf(
         kind = CardFieldKind.Choice,
         choices = PAYMENT_TYPE_CHOICES,
         read = { it.paymentType ?: "" },
+        display = { choiceLabel(PAYMENT_TYPE_CHOICES, it.paymentType) },
     ),
-    CardField("pfh_rate", "PFH rate ($)", CardFieldGroup.Money, CardFieldKind.Decimal) { it.pfhRate.orEmpty() },
+    CardField(
+        column = "pfh_rate", label = "PFH rate", group = CardFieldGroup.Money,
+        kind = CardFieldKind.Decimal,
+        read = { it.pfhRate.orEmpty() },
+        display = { d -> d.pfhRate?.let { "$%.2f".format(it) } ?: "" },
+    ),
     CardField(
         column = "narrator_share_percent",
         label = "Narrator share (%)",
@@ -183,6 +281,7 @@ val CARD_FIELDS: List<CardField> = listOf(
         kind = CardFieldKind.Integer,
         help = "1–100, or empty for the format default. Zero is refused — leave it empty.",
         read = { it.narratorSharePercent.orEmpty() },
+        display = { d -> d.narratorSharePercent?.let { "$it%" } ?: "" },
     ),
     CardField(
         column = "royalty_split_percent",
@@ -195,6 +294,7 @@ val CARD_FIELDS: List<CardField> = listOf(
         // it is looking at. This sentence says what the database will accept.
         help = "The co-narrator's share of each statement. 1–100, or empty when it is the default fifty-fifty.",
         read = { it.royaltySplitPercent.orEmpty() },
+        display = { d -> d.royaltySplitPercent?.let { "$it%" } ?: "" },
     ),
 
     CardField(
@@ -205,10 +305,22 @@ val CARD_FIELDS: List<CardField> = listOf(
         read = { it.description ?: "" },
     ),
 
-    CardField("audible_link", "Amazon / Audible", CardFieldGroup.Links, CardFieldKind.Text) { it.audibleLink ?: "" },
-    CardField("ar_link", "Author's Republic", CardFieldGroup.Links, CardFieldKind.Text) { it.arLink ?: "" },
-    CardField("spotify_link", "Spotify", CardFieldGroup.Links, CardFieldKind.Text) { it.spotifyLink ?: "" },
-    CardField("script_url", "Script (OneDrive)", CardFieldGroup.Links, CardFieldKind.Text) { it.scriptUrl ?: "" },
+    CardField(
+        column = "audible_link", label = "Amazon / Audible", group = CardFieldGroup.Links, kind = CardFieldKind.Text,
+        read = { it.audibleLink ?: "" },
+    ),
+    CardField(
+        column = "ar_link", label = "Author's Republic", group = CardFieldGroup.Links, kind = CardFieldKind.Text,
+        read = { it.arLink ?: "" },
+    ),
+    CardField(
+        column = "spotify_link", label = "Spotify", group = CardFieldGroup.Links, kind = CardFieldKind.Text,
+        read = { it.spotifyLink ?: "" },
+    ),
+    CardField(
+        column = "script_url", label = "Script (OneDrive)", group = CardFieldGroup.Links, kind = CardFieldKind.Text,
+        read = { it.scriptUrl ?: "" },
+    ),
 )
 
 /**
@@ -223,9 +335,6 @@ val UNEDITED_GRANTED_COLUMNS: Map<String, String> = mapOf(
     "archived_at" to "Set by archiving, not edited on its own.",
     "archived_reason" to "Set by archiving, not edited on its own.",
     "archived_notes" to "Set by archiving, not edited on its own.",
-    // Stage 10C. Granted by 10A, reachable in the next commit.
-    "total_pages" to "Page progress — 10C.",
-    "current_page" to "Page progress — 10C, set from Today.",
 )
 
 /**

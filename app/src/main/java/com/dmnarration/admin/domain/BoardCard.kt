@@ -41,6 +41,9 @@ data class BoardCard(
     /** Chosen recording days. Empty means none picked yet. */
     val recordingDates: List<LocalDate>,
     val wordsRecorded: Int?,
+    /** Pages: a STORED fact, not derived from chapters. Null on most books. */
+    val totalPages: Int?,
+    val currentPage: Int?,
     val createdAt: Instant,
     /**
      * Set means the card has left the board.

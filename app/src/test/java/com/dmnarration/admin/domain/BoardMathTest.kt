@@ -364,6 +364,9 @@ internal fun card(
     createdAt: String = "2026-08-01T00:00:00Z",
     wordCount: Int? = null,
     format: String? = null,
+    wordsRecorded: Int? = null,
+    totalPages: Int? = null,
+    currentPage: Int? = null,
 ) = BoardCard(
     id = id,
     title = "T$id",
@@ -381,6 +384,8 @@ internal fun card(
     narrationFormat = format,
     narratorSharePercent = null,
     recordingDates = emptyList(),
-    wordsRecorded = null,
+    wordsRecorded = wordsRecorded,
     createdAt = Instant.parse(createdAt),
+    totalPages = totalPages,
+    currentPage = currentPage,
 )

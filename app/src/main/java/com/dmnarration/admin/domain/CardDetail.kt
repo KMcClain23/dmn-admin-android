@@ -45,6 +45,8 @@ data class CardDetail(
     val first15Complete: Boolean,
     val wordCount: Int?,
     val wordsRecorded: Int?,
+    val totalPages: Int?,
+    val currentPage: Int?,
     val pfhRate: Double?,
     val paymentType: String?,
     val narrationFormat: String?,

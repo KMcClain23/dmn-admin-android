@@ -47,6 +47,8 @@ data class BoardCardDto(
     val narrator_share_percent: Int? = null,
     val recording_dates: List<String>? = null,
     val words_recorded: Int? = null,
+    val total_pages: Int? = null,
+    val current_page: Int? = null,
     val created_at: String? = null,
     /** Absent from the board read, present in the write's select. */
     val archived_at: String? = null,
@@ -109,6 +111,8 @@ fun BoardCardDto.toDomain(): BoardCard = BoardCard(
     narratorSharePercent = narrator_share_percent,
     recordingDates = recording_dates.orEmpty().mapNotNull(::date),
     wordsRecorded = words_recorded,
+    totalPages = total_pages,
+    currentPage = current_page,
     createdAt = instant(created_at),
     // Through the logging helper rather than a bare getOrNull: an unreadable
     // archived_at reads as "not archived", which puts the card back on the board.
