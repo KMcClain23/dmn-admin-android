@@ -11,6 +11,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.dmnarration.admin.ui.agenda.AgendaScreen
 import com.dmnarration.admin.ui.settings.SettingsScreen
+import com.dmnarration.admin.ui.settings.SettingsViewModel
 import com.dmnarration.admin.ui.shelf.ArchiveScreen
 import com.dmnarration.admin.ui.shelf.ReleasedScreen
 import androidx.compose.material.icons.Icons
@@ -41,6 +42,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -84,6 +86,19 @@ class MainActivity : ComponentActivity() {
                         Modifier
                             .windowInsetsPadding(WindowInsets.systemBars)
                             .consumeWindowInsets(WindowInsets.systemBars)
+                            // Found on the emulator the moment Settings became
+                            // editable: type a rate and the Save button sits
+                            // under the keyboard, with nothing to scroll because
+                            // the window never resized. `adjustResize` is in the
+                            // manifest and SignInScreen had its own imePadding(),
+                            // so this was the only screen with an input that had
+                            // no way to get out from under the IME.
+                            //
+                            // At the ROOT rather than on Settings: card fields
+                            // are the next stage and money records after that,
+                            // and every one of them is a text input on a screen
+                            // that does not have this yet.
+                            .imePadding()
                     )
                 }
             }
@@ -231,6 +246,8 @@ private fun BoardRoute(
     val shelf by shelfVm.state.collectAsStateWithLifecycle()
     val moneyVm: MoneyViewModel = hiltViewModel()
     val money by moneyVm.state.collectAsStateWithLifecycle()
+    val settingsVm: SettingsViewModel = hiltViewModel()
+    val settingsState by settingsVm.state.collectAsStateWithLifecycle()
     // An id rather than a card: Released and Archive open the same detail sheet
     // from rows that are not BoardCards, and `card_detail()` only ever needed
     // the id. Holding a whole card here would have meant three overlays, or one
@@ -253,7 +270,11 @@ private fun BoardRoute(
         vm.start(role)
         shelfVm.start(role)
         moneyVm.start(role)
+        settingsVm.start(role)
     }
+    // A changed rate re-costs every card, so the board re-reads rather than
+    // keeping figures derived from a number that is no longer stored.
+    LaunchedEffect(Unit) { settingsVm.onSettingSaved = vm::refresh }
     // A restored card belongs on the board again, and the board is the only
     // thing that can put it there.
     LaunchedEffect(Unit) {
@@ -341,11 +362,10 @@ private fun BoardRoute(
         BackHandler { settingsOpen = false }
         Box(Modifier.fillMaxSize().background(Background)) {
             SettingsScreen(
-                settings = state.site,
-                loading = state.loading,
-                refreshing = state.refreshing,
-                error = state.error,
-                onRefresh = vm::refresh,
+                state = settingsState,
+                onRefresh = settingsVm::refresh,
+                onSave = settingsVm::save,
+                onEdited = settingsVm::clearWrite,
                 onBack = { settingsOpen = false },
             )
         }

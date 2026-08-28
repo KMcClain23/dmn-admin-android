@@ -85,6 +85,10 @@ class BoardRefusalTest {
     private class FakeStudio : StudioSettingsRepository {
         override suspend fun load() =
             Result.success(com.dmnarration.admin.domain.StudioSettingsRead(DEFAULT_STUDIO_SETTINGS, emptyList()))
+        // Stage 9 addition. Present so the compiler enforces that this fake
+        // covers the whole interface; these tests do not write settings.
+        override suspend fun updateSetting(key: String, value: String): Result<String?> =
+            Result.success(null)
 
         override suspend fun loadAll() = Result.success(
             com.dmnarration.admin.domain.SiteSettings(

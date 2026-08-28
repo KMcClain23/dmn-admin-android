@@ -319,6 +319,20 @@ interface StudioSettingsRepository {
      * this and adding one needs a migration first.
      */
     suspend fun loadAll(): Result<SiteSettings>
+
+    /**
+     * Write one setting's `value`, and report what actually happened to it.
+     *
+     *   success(value) — the server returned the row; its value is the truth.
+     *   success(null)  — zero rows. RLS refused this row, wearing HTTP 200.
+     *   failure(t)     — rejected by the rule in the database, or a transport
+     *                    failure. [serverRefusalMessage] tells them apart.
+     *
+     * `key` is never written: the column grant is `update (value)` only, so a
+     * client physically cannot rename a setting. The filter selects the row; the
+     * patch carries one column.
+     */
+    suspend fun updateSetting(key: String, value: String): Result<String?>
 }
 
 @Singleton
@@ -340,6 +354,25 @@ class SupabaseStudioSettingsRepository @Inject constructor(
             }
             .decodeList<SiteSettingDto>()
         studioSettingsFrom(rows.mapNotNull { r -> r.value?.let { r.key to it } }.toMap())
+    }
+
+    /**
+     * `select()` is what makes PostgREST return the affected rows at all.
+     * Without it a refused write succeeds silently and is indistinguishable
+     * from a save — Stage 2's bug 5, on the table that drives money figures.
+     *
+     * `updated_at` is not sent: `authenticated` has no grant for it and the
+     * trigger stamps it. Nothing here computes a timestamp.
+     */
+    override suspend fun updateSetting(key: String, value: String): Result<String?> = runCatching {
+        client.from("site_settings")
+            .update(buildJsonObject { put("value", value) }) {
+                select(Columns.raw("key, value"))
+                filter { eq("key", key) }
+            }
+            .decodeList<SiteSettingDto>()
+            .firstOrNull()
+            ?.value
     }
 
     override suspend fun loadAll(): Result<SiteSettings> = runCatching {
