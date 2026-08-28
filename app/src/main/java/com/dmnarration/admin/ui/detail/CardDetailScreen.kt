@@ -61,6 +61,8 @@ fun CardDetailScreen(
     capabilities: Capabilities,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
+    onSaveField: (String, String) -> Unit,
+    onEditField: (String) -> Unit,
 ) {
     val c = DmnTheme.colors
     val detail = state.detail
@@ -110,7 +112,7 @@ fun CardDetailScreen(
                     state.missing -> item {
                         Text("That card no longer exists.", style = DmnType.Body, color = c.textMuted)
                     }
-                    detail != null -> detailBody(detail, capabilities)
+                    detail != null -> detailBody(detail, capabilities, state, onSaveField, onEditField)
                     state.loading -> item {
                         Text("Loading…", style = DmnType.Body, color = c.textFaint)
                     }
@@ -120,7 +122,13 @@ fun CardDetailScreen(
     }
 }
 
-private fun LazyListScope.detailBody(d: CardDetail, capabilities: Capabilities) {
+private fun LazyListScope.detailBody(
+    d: CardDetail,
+    capabilities: Capabilities,
+    state: CardDetailUiState,
+    onSaveField: (String, String) -> Unit,
+    onEditField: (String) -> Unit,
+) {
     item { Header(d, capabilities) }
 
     d.description?.let { item { Section("Description") { Body(it) } } }
@@ -148,6 +156,22 @@ private fun LazyListScope.detailBody(d: CardDetail, capabilities: Capabilities) 
         d.links.forEachIndexed { i, l -> add("Link ${i + 1}" to l) }
     }
     if (links.isNotEmpty()) item { Section("Links") { Links(links) } }
+
+    // Editing lives BELOW the read-only summary rather than replacing it. The
+    // summary hides empty rows, which is right for reading and wrong for
+    // editing — a field Dean cannot see is one he cannot fill in, and the
+    // errand this stage exists for is correcting a MISSING word count.
+    item {
+        Section("Edit") {
+            CardEditSection(
+                detail = d,
+                capabilities = capabilities,
+                writeFor = state::writeFor,
+                onSave = onSaveField,
+                onEdit = onEditField,
+            )
+        }
+    }
 }
 
 @Composable

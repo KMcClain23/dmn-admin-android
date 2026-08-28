@@ -376,7 +376,7 @@ private fun BoardRoute(
     selectedCardId?.let { cardId ->
         val detailVm: CardDetailViewModel = hiltViewModel(key = cardId)
         val detailState by detailVm.state.collectAsStateWithLifecycle()
-        LaunchedEffect(cardId) { detailVm.start(cardId) }
+        LaunchedEffect(cardId, role) { detailVm.start(cardId, role) }
 
         BackHandler { selectedCardId = null }
 
@@ -386,6 +386,8 @@ private fun BoardRoute(
                 capabilities = state.capabilities,
                 onBack = { selectedCardId = null },
                 onRefresh = detailVm::refresh,
+                onSaveField = detailVm::save,
+                onEditField = detailVm::clearWrite,
             )
         }
     }
