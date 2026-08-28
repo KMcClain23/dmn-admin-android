@@ -22,13 +22,22 @@ data class SiteSettings(
 )
 
 /**
- * The booking window, in the order it actually runs.
+ * The booking window, in the order it is stored.
  *
- * Stored as `[11, 12, 1, 2]` — November through February, a contiguous window that
- * crosses the year. **Sorting it numerically renders "January, February, November,
- * December", which turns one window into two and is wrong.** The stored order already
- * expresses the run, so it is preserved rather than tidied; sorting here would be a
- * presentation habit quietly changing the meaning.
+ * Stored as `[11, 12, 1, 2]`. That order is CLICK ORDER — the web's
+ * BookingWindowPicker appends each month as it is tapped and never sorts — and
+ * NOT, as this comment previously claimed, a deliberate expression of a window
+ * that crosses the year. The corrected reason still says keep it: it is data the
+ * user produced, and reordering it here would be a presentation habit quietly
+ * rewriting what was entered. `[11,12,1,2]` sorted to `[1,2,11,12]` would also
+ * render "January, February, November, December", turning one window into two —
+ * so the effect the old comment described is real even though its account of the
+ * cause was invented.
+ *
+ * A GAP IS LEGITIMATE. The picker is a free toggle grid over twelve rolling
+ * months, so two clicks produce one; `formatBookingWindow` on the web collapses
+ * any selection to a range without complaint, this returns null and the label
+ * lists the months instead, and the database accepts it.
  *
  * Returns null when the months do not form a single contiguous run, because then
  * "start" and "end" are not answerable and a range label would be a fabrication.

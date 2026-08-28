@@ -311,9 +311,11 @@ private fun BooleanSetting(
 /**
  * The booking window, as twelve toggles.
  *
- * Order is CLICK ORDER, appended, exactly as the web's picker stores it — the
- * stored array is the run Dean chose, and sorting it would turn one window that
- * crosses the year into two.
+ * Order is CLICK ORDER, appended, exactly as the web's picker stores it. It is
+ * not a deliberately-arranged run — that reading was invented and has been
+ * corrected in SiteSettings.kt — but it is data the user produced, and sorting
+ * it would rewrite what they entered. It would also turn `[11,12,1,2]` into
+ * "January, February, November, December": one window rendered as two.
  *
  * Nothing here refuses a gap. The web's picker produces one in two clicks, its
  * formatter collapses any selection to a range without erroring, Android lists
