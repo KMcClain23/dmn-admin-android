@@ -4,6 +4,8 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.dmnarration.admin.ui.theme.Background
 import com.dmnarration.admin.ui.theme.DmnTheme
 import com.dmnarration.admin.ui.theme.DmnType
@@ -51,3 +53,12 @@ fun SectionTabRow(
         }
     }
 }
+
+/**
+ * Room under the last row of a money list, so the navigation bar stops slicing it.
+ *
+ * The Expenses list ended with "Round-trip flights Portland–Boston, Oct 20–26, 2"
+ * cut mid-value by the bar. A figure a screen exists to show, hidden by furniture,
+ * is a defect rather than a polish item.
+ */
+val MONEY_LIST_BOTTOM_CLEARANCE: Dp = 24.dp

@@ -48,12 +48,23 @@ class ScrollableContent private constructor(
         /** A lazy list. The scroll container is built here, not by the caller. */
         fun list(
             contentPadding: Dp = 0.dp,
+            /**
+             * Extra room under the last row, for content the navigation bar
+             * would otherwise overlap. Reinstated for the money lists, whose
+             * final row was being sliced mid-value.
+             */
+            extraBottomPadding: Dp = 0.dp,
             verticalArrangement: Arrangement.Vertical = Arrangement.Top,
             content: LazyListScope.() -> Unit,
         ) = ScrollableContent {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(contentPadding),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = contentPadding,
+                    top = contentPadding,
+                    end = contentPadding,
+                    bottom = contentPadding + extraBottomPadding,
+                ),
                 verticalArrangement = verticalArrangement,
                 content = content,
             )

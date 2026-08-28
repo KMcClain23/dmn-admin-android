@@ -183,6 +183,87 @@ class MoneyTest {
         assertEquals(54.05, totalExpenses(listOf(expense("a", 19.0), expense("b", 35.05))), 0.001)
     }
 
+    // ---- expenses reconcile too, and the year boundary is a tax boundary ----
+
+    @Test fun `expense buckets sum to the expense total`() {
+        val rows = listOf(
+            expense("a", 19.00, on = "2026-08-24"),
+            expense("b", 35.05, on = "2025-09-25"),
+            expense("c", 1119.00, on = "2026-08-14"),
+        )
+        val b = spentBreakdown(rows)
+        assertEquals(1173.05, b.total, 0.001)
+        assertEquals("the parts must sum to the whole", b.total, b.buckets.sumOf { it.amount }, 0.001)
+        assertEquals(listOf("2026", "2025"), b.buckets.map { it.label })
+        assertEquals(3, b.count)
+    }
+
+    @Test fun `an expense whose date could not be read is still counted`() {
+        // incurred_on is NOT NULL, so this should not occur — but the parser
+        // answers null for a value it cannot read, and that row still has money
+        // in it. Dropping it would understate a tax figure.
+        val dated = expense("a", 10.0, on = "2026-01-01")
+        val undated = dated.copy(id = "b", incurredOn = null, amount = 5.0)
+        val b = spentBreakdown(listOf(dated, undated))
+        assertEquals(15.0, b.total, 0.001)
+        assertEquals(listOf("2026", NO_DATE_BUCKET), b.buckets.map { it.label })
+    }
+
+    // ---- Schedule C: named where known, raw where not ----
+
+    @Test fun `a known slug renders as the tax form names it`() {
+        assertEquals("Office expense", scheduleCLabel("office"))
+        assertEquals("Legal & professional services", scheduleCLabel("legal_professional"))
+        assertEquals("Other expenses", scheduleCLabel("other"))
+    }
+
+    @Test fun `all twelve web lines are carried, not only the six in use`() {
+        // Copying only what today's data uses would mean the seventh category
+        // Dean files renders as a raw slug on the phone and properly on the web.
+        assertEquals(12, SCHEDULE_C_LABEL.size)
+        for (slug in listOf("advertising", "contract_labor", "insurance", "legal_professional",
+                            "office", "rent", "repairs", "supplies", "travel", "meals",
+                            "utilities", "other")) {
+            assertTrue("$slug must be mapped", SCHEDULE_C_LABEL.containsKey(slug))
+        }
+    }
+
+    @Test fun `an unmapped slug renders raw and is never prettified`() {
+        // "legal_professional" title-cased becomes "Legal Professional" — a label
+        // the tax form does not use. A wrong label that looks deliberate is worse
+        // than an obviously unmapped one.
+        assertEquals("home_office", scheduleCLabel("home_office"))
+        assertEquals("vehicle", scheduleCLabel("vehicle"))
+        assertNull(scheduleCLabel(null))
+        assertNull(scheduleCLabel(""))
+    }
+
+    @Test fun `the category line carries both names, in the web's order`() {
+        val e = expense("a", 19.0).copy(label = "Software & subscriptions", scheduleC = "office")
+        assertEquals("Software & subscriptions · Office expense", expenseCategoryLine(e))
+        assertEquals("Office expense", expenseCategoryLine(e.copy(label = null)))
+        assertEquals("Software & subscriptions", expenseCategoryLine(e.copy(scheduleC = null)))
+        assertNull(expenseCategoryLine(e.copy(label = null, scheduleC = null)))
+    }
+
+    // ---- an editable field shows what is stored ----
+
+    @Test fun `a whole setting renders without a trailing decimal`() {
+        // The box showed "6.0" while the database held "6", and max_books_per_day
+        // — an Int — showed "2". An editable field displaying something other
+        // than what is stored is the app not showing what is there.
+        assertEquals("6", settingText(6.0))
+        assertEquals("4", settingText(4.0))
+        assertEquals("2", settingText(2.0))
+    }
+
+    @Test fun `a fractional setting keeps its decimals`() {
+        // A 6.5-hour day is a real thing Dean can set.
+        assertEquals("6.5", settingText(6.5))
+        assertEquals("0.5", settingText(0.5))
+        assertNull(settingText(null))
+    }
+
     // ---- who the screens exist for ----
 
     @Test fun `only an admin has money screens at all`() {

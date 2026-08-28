@@ -37,6 +37,7 @@ import com.dmnarration.admin.domain.WRITE_REFUSED_MESSAGE
 import com.dmnarration.admin.domain.acceptingProjectsLabel
 import com.dmnarration.admin.domain.availableMonthsLabel
 import com.dmnarration.admin.domain.monthName
+import com.dmnarration.admin.domain.settingText
 import com.dmnarration.admin.ui.board.PullToRefreshSurface
 import com.dmnarration.admin.ui.board.ScrollableContent
 import com.dmnarration.admin.ui.components.DmnTextField
@@ -183,13 +184,13 @@ private fun LazyListScope.body(
         Group("Capacity") {
             NumberSetting(
                 "A full day at the mic", SettingKeys.DAILY_CAPACITY_HOURS,
-                s.studio.settings.dailyCapacityHours?.toString(),
+                settingText(s.studio.settings.dailyCapacityHours),
                 s.studio.issueFor(SettingKeys.DAILY_CAPACITY_HOURS),
                 null, editable, state, onSave, onEdited,
             )
             NumberSetting(
                 "A heavy day starts at", SettingKeys.HEAVY_DAY_HOURS,
-                s.studio.settings.heavyDayHours?.toString(),
+                settingText(s.studio.settings.heavyDayHours),
                 s.studio.issueFor(SettingKeys.HEAVY_DAY_HOURS),
                 null, editable, state, onSave, onEdited,
             )

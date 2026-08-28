@@ -144,9 +144,114 @@ fun receivedBreakdown(payments: List<Payment>): ReceivedBreakdown {
     return ReceivedBreakdown(total = buckets.sumOf { it.amount }, buckets = buckets)
 }
 
+/**
+ * A setting's stored number as an editable string.
+ *
+ * `Double.toString()` renders 6 as "6.0", so the box showed a different string
+ * than the database held while `maxBooksPerDay` — an Int — showed "2". An
+ * editable field displaying something other than what is stored is the app not
+ * showing what is there, which is the whole complaint Stage 7 answered one layer
+ * up.
+ *
+ * Whole values lose the trailing ".0"; fractional ones keep their decimals,
+ * because a 6.5-hour day is a real thing Dean can set.
+ */
+fun settingText(value: Double?): String? {
+    if (value == null) return null
+    return if (value == kotlin.math.floor(value) && !value.isInfinite()) {
+        value.toLong().toString()
+    } else {
+        value.toString()
+    }
+}
+
 /** Total spend. Expenses are stored amounts; nothing here is derived. */
 fun totalExpenses(expenses: List<Expense>): Double =
     expenses.sumOf { it.amount }
+
+/**
+ * Spend by year, with the total derived from the buckets.
+ *
+ * The same shape as [receivedBreakdown] and for a stronger reason: on expenses
+ * the year boundary is a TAX boundary. A total that did not account for its own
+ * breakdown would be wrong in the one place being wrong is expensive.
+ *
+ * `incurred_on` is NOT NULL in Postgres, so an undated bucket should never
+ * appear — but the parser answers null for a value it cannot read, and a row
+ * whose date is unreadable still has an amount. It is counted, in its own line,
+ * rather than dropped from a total that claims to be everything.
+ */
+fun spentBreakdown(expenses: List<Expense>): ReceivedBreakdown {
+    val byYear = expenses
+        .filter { it.incurredOn != null }
+        .groupBy { it.incurredOn!!.year }
+        .toSortedMap(compareByDescending { it })
+        .map { (year, rows) ->
+            ReceivedBucket("$year", rows.sumOf { it.amount }, rows.size)
+        }
+
+    val undated = expenses.filter { it.incurredOn == null }
+    val buckets =
+        if (undated.isEmpty()) byYear
+        else byYear + ReceivedBucket(NO_DATE_BUCKET, undated.sumOf { it.amount }, undated.size)
+
+    return ReceivedBreakdown(total = buckets.sumOf { it.amount }, buckets = buckets)
+}
+
+/**
+ * The Schedule C lines, as the form names them.
+ *
+ * PORTED VERBATIM from the web's `SCHEDULE_C_LABEL`, all twelve, rather than the
+ * six the data happens to use today. Copying only what is in use would mean the
+ * seventh category Dean files renders as a raw slug on the phone while the web
+ * names it properly — a divergence created by being clever about scope.
+ *
+ * These names were not invented here and are not ours to invent: they are the
+ * lines on the tax form, and the web has used them since expenses existed.
+ *
+ * NOTE the two names every expense has. `label` is the everyday one Dean picked
+ * while typing ("Software & subscriptions"); this is the line it files under
+ * ("Office expense"). The web shows both, in that order, and so does the phone
+ * now — the ledger reads plainly and still says what it files as.
+ */
+val SCHEDULE_C_LABEL: Map<String, String> = mapOf(
+    "advertising" to "Advertising",
+    "contract_labor" to "Contract labor",
+    "insurance" to "Insurance",
+    "legal_professional" to "Legal & professional services",
+    "office" to "Office expense",
+    "rent" to "Rent or lease",
+    "repairs" to "Repairs & maintenance",
+    "supplies" to "Supplies",
+    "travel" to "Travel",
+    "meals" to "Meals",
+    "utilities" to "Utilities",
+    "other" to "Other expenses",
+)
+
+/**
+ * A Schedule C line as a person reads it — or the raw slug, untouched.
+ *
+ * An UNMAPPED slug renders exactly as stored. Never prettified, never
+ * title-cased: "legal_professional" naively title-cased becomes "Legal
+ * Professional", a label the tax form does not use, and a wrong label that looks
+ * deliberate is worse than an obviously unmapped one. Same rule the chapter
+ * statuses follow for values they do not recognise.
+ */
+fun scheduleCLabel(slug: String?): String? {
+    if (slug.isNullOrBlank()) return null
+    return SCHEDULE_C_LABEL[slug] ?: slug
+}
+
+/**
+ * "Software & subscriptions · Office expense", or whichever half exists.
+ *
+ * Matches the web's `{label} · {SCHEDULE_C_LABEL[schedule_c] ?? schedule_c}`.
+ */
+fun expenseCategoryLine(expense: Expense): String? {
+    val parts = listOfNotNull(expense.label, scheduleCLabel(expense.scheduleC))
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
 
 /**
  * "Royalty" / "Fee", falling back to the stored value.

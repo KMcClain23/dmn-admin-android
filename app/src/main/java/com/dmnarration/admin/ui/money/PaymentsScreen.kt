@@ -1,6 +1,7 @@
 package com.dmnarration.admin.ui.money
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +26,7 @@ import com.dmnarration.admin.domain.paymentKindLabel
 import com.dmnarration.admin.domain.paymentTitle
 import com.dmnarration.admin.domain.NO_DATE_BUCKET
 import com.dmnarration.admin.domain.receivedBreakdown
+import com.dmnarration.admin.ui.components.MONEY_LIST_BOTTOM_CLEARANCE
 import com.dmnarration.admin.ui.board.PullToRefreshSurface
 import com.dmnarration.admin.ui.board.ScrollableContent
 import com.dmnarration.admin.ui.theme.DmnTheme
@@ -63,6 +69,7 @@ fun PaymentsScreen(
             onRefresh = onRefresh,
             content = ScrollableContent.list(
                 contentPadding = 16.dp,
+                extraBottomPadding = MONEY_LIST_BOTTOM_CLEARANCE,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (state.payments.isEmpty()) {
@@ -162,14 +169,29 @@ private fun LazyListScope.rows(payments: List<Payment>) {
     }
 }
 
+/**
+ * Tap to expand the note.
+ *
+ * The ACX royalty notes carry real content — product ids, and the explanation of
+ * why a title reported nothing this period — and at three lines they were cut
+ * mid-word ("…only a carrie…"). Truncating harder would lose more; expanding
+ * shows what is there. A payment row had no tap action, so this costs nothing
+ * and takes nothing away.
+ */
 @Composable
 private fun PaymentRow(payment: Payment) {
     val c = DmnTheme.colors
+    var expanded by remember(payment.id) { mutableStateOf(false) }
+    val hasNote = payment.notes != null
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(c.surfaceRaised)
+            // Only where there is something to expand. A row that visibly
+            // responds to a tap and then does nothing is worse than one that
+            // never responded.
+            .then(if (hasNote) Modifier.clickable { expanded = !expanded } else Modifier)
             .padding(12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
@@ -201,7 +223,7 @@ private fun PaymentRow(payment: Payment) {
                 it,
                 style = DmnType.Small,
                 color = c.textDim,
-                maxLines = 3,
+                maxLines = if (expanded) Int.MAX_VALUE else 3,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 6.dp),
             )

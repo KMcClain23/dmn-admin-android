@@ -16,7 +16,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dmnarration.admin.domain.Expense
-import com.dmnarration.admin.domain.totalExpenses
+import com.dmnarration.admin.domain.NO_DATE_BUCKET
+import com.dmnarration.admin.domain.expenseCategoryLine
+import com.dmnarration.admin.domain.spentBreakdown
+import com.dmnarration.admin.ui.components.MONEY_LIST_BOTTOM_CLEARANCE
 import com.dmnarration.admin.ui.board.PullToRefreshSurface
 import com.dmnarration.admin.ui.board.ScrollableContent
 import com.dmnarration.admin.ui.theme.DmnTheme
@@ -60,6 +63,10 @@ fun ExpensesScreen(
             onRefresh = onRefresh,
             content = ScrollableContent.list(
                 contentPadding = 16.dp,
+                // The nav bar was slicing the last row mid-value — "Round-trip
+                // flights Portland–Boston, Oct 20–26, 2" cut at the comma. On a
+                // money screen that is a hidden figure, not a cosmetic issue.
+                extraBottomPadding = MONEY_LIST_BOTTOM_CLEARANCE,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (state.expenses.isEmpty()) {
@@ -87,6 +94,11 @@ fun ExpensesScreen(
 @Composable
 private fun Total(expenses: List<Expense>) {
     val c = DmnTheme.colors
+    // One object: the total IS the sum of the buckets, so a year that is
+    // forgotten moves the headline rather than hiding under it. On expenses the
+    // year boundary is a tax boundary, which is why this matters more here than
+    // it did on payments.
+    val breakdown = spentBreakdown(expenses)
     Column(
         Modifier
             .fillMaxWidth()
@@ -96,18 +108,32 @@ private fun Total(expenses: List<Expense>) {
     ) {
         Text("TOTAL SPEND", style = DmnType.Label, color = c.textFaint)
         Text(
-            money(totalExpenses(expenses)),
+            money(breakdown.total),
             style = DmnType.TitleLg,
             color = c.textPrimary,
             modifier = Modifier.padding(top = 4.dp),
         )
         Text(
-            "across ${expenses.size} ${if (expenses.size == 1) "expense" else "expenses"}",
+            "across ${breakdown.count} ${if (breakdown.count == 1) "expense" else "expenses"}",
             style = DmnType.Small,
             color = c.textMuted,
         )
-        // Deliberately no Schedule C subtotals. Grouping by a tax category is a
-        // tax calculation, and this screen does not do one.
+        for (bucket in breakdown.buckets) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    bucket.label,
+                    style = DmnType.Body,
+                    color = if (bucket.label == NO_DATE_BUCKET) c.textDim else c.textMuted,
+                )
+                Text(money(bucket.amount), style = DmnType.Numeric, color = c.textPrimary)
+            }
+        }
+        // Still no Schedule C subtotals. Grouping by a tax category is a tax
+        // calculation, and this screen does not do one. Years are a fact about
+        // when money moved; a category total is an assertion about a return.
     }
 }
 
@@ -137,11 +163,14 @@ private fun ExpenseRow(expense: Expense) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (expense.description.isNotBlank()) {
+                    // One line and dimmer. The vendor is the identifying fact;
+                    // a two-line description outweighed it on the rows where it
+                    // ran long, which inverted what the row is about.
                     Text(
                         expense.description,
                         style = DmnType.Small,
-                        color = c.textMuted,
-                        maxLines = 2,
+                        color = c.textDim,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 2.dp),
                     )
@@ -161,12 +190,17 @@ private fun ExpenseRow(expense: Expense) {
             )
         }
 
-        // The tax category as stored, with no interpretation laid over it.
-        expense.scheduleC?.let {
+        // Both names the expense has: the everyday one Dean chose while typing,
+        // then the Schedule C line it files under — the web's order exactly.
+        //
+        // NOT in the accent colour any more. Amber is the app's action colour,
+        // and a tax category is the least actionable thing on the row while
+        // being, until now, the most visually urgent.
+        expenseCategoryLine(expense)?.let {
             Text(
                 it,
                 style = DmnType.Small,
-                color = c.accentAmberDim,
+                color = c.textDim,
                 modifier = Modifier.padding(top = 6.dp),
             )
         }
