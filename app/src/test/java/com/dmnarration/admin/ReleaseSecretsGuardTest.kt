@@ -24,9 +24,17 @@ import java.io.File
  *     when git says a file is ignored.
  *   * A file staged BEFORE the pattern existed stays tracked forever; .gitignore
  *     only governs untracked files.
- *   * A password does not have to arrive in a .jks. `KEYSTORE_PASSWORD=hunter2`
- *     in a checked-in build script, a CI yaml, or a README is the same leak with
- *     none of the file extensions.
+ *   * A password does not have to arrive in a .jks. A KEYSTORE_PASSWORD
+ *     assignment in a checked-in build script, a CI yaml, or a README is the
+ *     same leak with none of the file extensions.
+ *
+ * NOTE THE WORDING OF THAT LAST BULLET. It described the leak with a literal
+ * `NAME=value` example, and once this file was committed the guard matched its
+ * own documentation and went red — on a clean tree, having passed while the file
+ * was still untracked. The fix was to describe the shape instead of writing one,
+ * NOT to exempt this file: a self-exemption is the one hole a guard like this
+ * cannot afford, because this is exactly the file someone would paste a real
+ * password into while "testing the guard".
  *
  * So this asks git what is actually TRACKED, which is the only question that
  * matters. An upload key cannot be rotated the way a password can: Play binds

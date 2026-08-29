@@ -234,8 +234,10 @@ val requireReleaseSigning = tasks.register("requireReleaseSigning") {
                     appendLine("  KEY_ALIAS=...")
                     appendLine("  KEY_PASSWORD=...")
                     appendLine()
-                    appendLine("`assembleRelease` on its own still works and still produces an unsigned")
-                    appendLine("artifact — that is deliberate. Only publishing is blocked.")
+                    appendLine("Debug builds are unaffected and a fresh clone still configures —")
+                    appendLine("that is what absent-not-fatal means here. What is NOT allowed is a")
+                    appendLine("release artifact that looks fine and is unsigned: Play rejects it, and")
+                    appendLine("it would not be obvious why until then.")
                 }
             )
         }
@@ -284,6 +286,17 @@ val requireFreshVersionCode = tasks.register("requireFreshVersionCode") {
         }
         logger.lifecycle("versionCode $computed (last published $floor) — ok to publish.")
     }
+}
+
+// A RELEASE BUILD MUST NOT SILENTLY EMIT AN UNSIGNED ARTIFACT.
+//
+// Configuration stays absent-not-fatal — a fresh clone configures, and debug
+// builds and runs with no keystore anywhere. But assembleRelease and
+// bundleRelease themselves now fail when signing is missing, rather than
+// producing a file that looks finished and is rejected by Play much later, by
+// which time the cause is far away from the effect.
+tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
+    dependsOn(requireReleaseSigning)
 }
 
 /** The Play artifact. Signed .aab. */
