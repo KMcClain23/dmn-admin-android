@@ -174,7 +174,7 @@ class BoardViewModel @Inject constructor(
             val settings = site?.studio?.settings
                 ?: StudioSettings(null, null, null, null, null)
 
-            board.loadBoard()
+            board.loadBoard(role)
                 .onSuccess { cards ->
                     allCards = cards
                     _state.value = _state.value.copy(
@@ -192,8 +192,14 @@ class BoardViewModel @Inject constructor(
                         site = site,
                         // Restores what a refusal withdrew. Only an admin gets
                         // rows out of board_for_session(), so a successful read
-                        // is the server itself saying this session still is
-                        // one. Recovery arrives by pull-to-refresh rather than
+                        // is the server itself saying this session still holds
+                        // the role it was routed for. NOTE since the editor read
+                        // landed: a successful read no longer proves ADMIN, only
+                        // that the role the client routed on was accepted — an
+                        // editor succeeds against board_for_editor(). What it
+                        // still rules out is a session that has lost the role it
+                        // is acting as, which is the case bug 6 missed.
+                        // Recovery arrives by pull-to-refresh rather than
                         // start(), because nothing re-resolves the role
                         // mid-session — without this the cards would come back
                         // read-only until the app was restarted.

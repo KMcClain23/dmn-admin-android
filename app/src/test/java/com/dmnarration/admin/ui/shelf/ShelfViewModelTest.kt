@@ -71,7 +71,7 @@ class ShelfViewModelTest {
         var writeFailure: Throwable? = null
         var unarchived = mutableListOf<String>()
 
-        override suspend fun loadBoard(): Result<List<BoardCard>> = Result.success(emptyList())
+        override suspend fun loadBoard(role: UserRole): Result<List<BoardCard>> = Result.success(emptyList())
         override suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?> =
             Result.success(null)
         override suspend fun cardDetail(cardId: String): Result<CardDetail?> = Result.success(null)

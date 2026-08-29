@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.dmnarration.admin.domain.BoardCard
+import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.domain.SettingKeys
 import com.dmnarration.admin.domain.SiteSettings
 import com.dmnarration.admin.domain.StudioSettings
@@ -50,7 +51,24 @@ class CardAccessNotEnabledException :
  * raises proved nothing about what the screen did with the raise.
  */
 interface BoardRepository {
-    suspend fun loadBoard(): Result<List<BoardCard>>
+    /**
+     * The role is PASSED IN, never cached here.
+     *
+     * Choosing the relation from a role the client had cached is what produced
+     * bug 6, and the read path was deliberately left with no dispatch in it. A
+     * second role brings dispatch back, because the two roles genuinely read
+     * different relations — an editor is refused by board_for_session() and
+     * board_for_editor() is the only thing she can call.
+     *
+     * What makes it safe is that the dispatch is a HINT and not the boundary. A
+     * stale ADMIN still calls board_for_session(), and the server still refuses;
+     * the failure is loud and closed, exactly as before. The direction that
+     * degrades quietly — a stale EDITOR calling board_for_editor() — costs an
+     * admin the money columns on the board and leaks nothing.
+     *
+     * UNKNOWN calls nothing at all. It is not a role to guess at.
+     */
+    suspend fun loadBoard(role: UserRole): Result<List<BoardCard>>
     suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?>
 
     /**
@@ -145,9 +163,18 @@ class SupabaseBoardRepository @Inject constructor(
     private val client: SupabaseClient,
 ) : BoardRepository {
 
-    override suspend fun loadBoard(): Result<List<BoardCard>> = runCatching {
+    override suspend fun loadBoard(role: UserRole): Result<List<BoardCard>> = runCatching {
+        // Fail closed. UNKNOWN is a session whose permissions could not be
+        // established, and there is no relation that is safe to guess for it.
+        // Deliberately NOT a fallback to the editor read: a fallback would turn
+        // a routing bug into a quietly narrower board.
+        val rpc = when (role) {
+            UserRole.ADMIN -> BOARD_RPC
+            UserRole.EDITOR -> BOARD_EDITOR_RPC
+            UserRole.UNKNOWN -> throw BoardAccessNotEnabledException()
+        }
         try {
-            client.postgrest.rpc(BOARD_RPC)
+            client.postgrest.rpc(rpc)
                 .decodeList<BoardCardDto>()
                 .map { it.toDomain() }
         } catch (t: Throwable) {
@@ -306,6 +333,15 @@ class SupabaseBoardRepository @Inject constructor(
 
     private companion object {
         const val BOARD_RPC = "board_for_session"
+
+        /**
+         * The editor's board. Returns the same card shape MINUS pfh_rate,
+         * payment_type and narrator_share_percent — omitted from the function's
+         * return type, so they are absent from the payload rather than null.
+         * BoardCardDto defaults them to null, which is why the same DTO decodes
+         * both.
+         */
+        const val BOARD_EDITOR_RPC = "board_for_editor"
         const val CARD_RPC = "card_detail"
         const val PAYMENTS_RPC = "payments_for_session"
         const val PAYOUTS_RPC = "payouts_for_session"

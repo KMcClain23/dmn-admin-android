@@ -60,7 +60,7 @@ class BoardGestureWriteTest {
         var failWith: Throwable? = null
         var patches = mutableListOf<JsonObject>()
 
-        override suspend fun loadBoard(): Result<List<BoardCard>> = Result.success(cards)
+        override suspend fun loadBoard(role: UserRole): Result<List<BoardCard>> = Result.success(cards)
 
         override suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?> {
             patches += patch

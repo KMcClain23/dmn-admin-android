@@ -63,7 +63,7 @@ class BoardRefusalTest {
     ) : BoardRepository {
         var loads = 0
 
-        override suspend fun loadBoard(): Result<List<BoardCard>> {
+        override suspend fun loadBoard(role: UserRole): Result<List<BoardCard>> {
             loads++
             return result()
         }
