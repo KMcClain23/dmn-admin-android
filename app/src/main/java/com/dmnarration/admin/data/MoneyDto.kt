@@ -3,6 +3,8 @@ package com.dmnarration.admin.data
 import android.util.Log
 import com.dmnarration.admin.domain.Expense
 import com.dmnarration.admin.domain.Payment
+import com.dmnarration.admin.domain.Payout
+import com.dmnarration.admin.domain.PayoutSummary
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 
@@ -118,3 +120,55 @@ fun ExpenseDto.toDomain(): Expense = Expense(
     notes = notes?.takeIf { it.isNotBlank() },
     source = source?.takeIf { it.isNotBlank() },
 )
+
+/**
+ * payouts_for_session()'s rows.
+ *
+ * paid_via and notes are NOT NULL in Postgres and empty on all eight unpaid
+ * rows; defaulted here for an absent key, never for a null.
+ */
+@Suppress("PropertyName")
+@Serializable
+data class PayoutDto(
+    val id: String,
+    val payment_id: String = "",
+    val payee_name: String = "",
+    val kind: String = "",
+    val amount: Double = 0.0,
+    val paid_on: String? = null,
+    val rate_pfh: Double? = null,
+    val paid_via: String = "",
+    val notes: String = "",
+)
+
+fun PayoutDto.toDomain(): Payout = Payout(
+    id = id,
+    paymentId = payment_id,
+    payeeName = payee_name,
+    kind = kind,
+    amount = amount,
+    paidOn = paid_on?.let(LocalDate::parse),
+    ratePfh = rate_pfh,
+    paidVia = paid_via,
+    notes = notes,
+)
+
+@Suppress("PropertyName")
+@Serializable
+data class PayoutSummaryDto(
+    val expected_in: Double = 0.0,
+    val committed_out: Double = 0.0,
+    val net: Double = 0.0,
+    val unpaid_count: Int = 0,
+    val paid_count: Int = 0,
+    val books_without_word_count: Int = 0,
+) {
+    fun toDomain() = PayoutSummary(
+        expectedIn = expected_in,
+        committedOut = committed_out,
+        net = net,
+        unpaidCount = unpaid_count,
+        paidCount = paid_count,
+        booksWithoutWordCount = books_without_word_count,
+    )
+}

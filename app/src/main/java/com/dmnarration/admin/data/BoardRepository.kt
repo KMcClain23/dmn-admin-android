@@ -3,6 +3,8 @@ package com.dmnarration.admin.data
 import com.dmnarration.admin.domain.ArchivedCard
 import com.dmnarration.admin.domain.Expense
 import com.dmnarration.admin.domain.Payment
+import com.dmnarration.admin.domain.Payout
+import com.dmnarration.admin.domain.PayoutSummary
 import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.CareerTotals
 import com.dmnarration.admin.domain.ReleasedBook
@@ -100,6 +102,17 @@ interface BoardRepository {
      * financial screen showing nothing must never be reachable by failing.
      */
     suspend fun payments(): Result<List<Payment>>
+
+    /**
+     * Money going OUT. Admin-only at the database: the RPC is SECURITY INVOKER
+     * and payment_payouts carries a "Role read" policy, so a non-admin session
+     * gets an EMPTY LIST rather than an error. Empty is therefore not evidence
+     * that there are no payouts — only that this session may not see any.
+     */
+    suspend fun payouts(): Result<List<Payout>>
+
+    /** The payout position. Null when it could not be read — never a zeroed pair. */
+    suspend fun payoutSummary(): Result<PayoutSummary?>
 
     /** Every expense, as stored. Refusal is an exception, not zero rows. */
     suspend fun expenses(): Result<List<Expense>>
@@ -264,6 +277,23 @@ class SupabaseBoardRepository @Inject constructor(
         }
     }
 
+    override suspend fun payouts(): Result<List<Payout>> = runCatching {
+        try {
+            client.postgrest.rpc(PAYOUTS_RPC).decodeList<PayoutDto>().map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isCardAccessRefusal()) throw CardAccessNotEnabledException() else throw t
+        }
+    }
+
+    override suspend fun payoutSummary(): Result<PayoutSummary?> = runCatching {
+        try {
+            client.postgrest.rpc(PAYOUT_SUMMARY_RPC)
+                .decodeList<PayoutSummaryDto>().firstOrNull()?.toDomain()
+        } catch (t: Throwable) {
+            if (t.isCardAccessRefusal()) throw CardAccessNotEnabledException() else throw t
+        }
+    }
+
     override suspend fun expenses(): Result<List<Expense>> = runCatching {
         try {
             client.postgrest.rpc(EXPENSES_RPC)
@@ -278,6 +308,8 @@ class SupabaseBoardRepository @Inject constructor(
         const val BOARD_RPC = "board_for_session"
         const val CARD_RPC = "card_detail"
         const val PAYMENTS_RPC = "payments_for_session"
+        const val PAYOUTS_RPC = "payouts_for_session"
+        const val PAYOUT_SUMMARY_RPC = "payout_summary_for_session"
         const val EXPENSES_RPC = "expenses_for_session"
         const val RELEASED_RPC = "released_for_session"
         const val ARCHIVED_RPC = "archived_for_session"

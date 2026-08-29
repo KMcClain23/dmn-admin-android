@@ -2,6 +2,8 @@ package com.dmnarration.admin.ui.board
 
 import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.data.StudioSettingsRepository
+import com.dmnarration.admin.domain.Payout
+import com.dmnarration.admin.domain.PayoutSummary
 import com.dmnarration.admin.domain.CareerTotals
 import com.dmnarration.admin.domain.ArchivedCard
 import com.dmnarration.admin.domain.BoardCard
@@ -87,6 +89,10 @@ class BoardGestureWriteTest {
         // screen shows no career figure for it — which is what these tests
         // want: a total absent rather than invented.
         override suspend fun careerTotals(): Result<CareerTotals?> = Result.success(null)
+        // Payouts are admin-only at the database and answer a non-admin with
+        // an EMPTY LIST, so empty here is the same shape the app must handle.
+        override suspend fun payouts(): Result<List<Payout>> = Result.success(emptyList())
+        override suspend fun payoutSummary(): Result<PayoutSummary?> = Result.success(null)
         override suspend fun unarchive(cardId: String): Result<ArchivedCard?> =
             Result.success(null)
         override suspend fun cardDetail(cardId: String) =

@@ -6,6 +6,8 @@ import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.domain.Capabilities
 import com.dmnarration.admin.domain.Expense
 import com.dmnarration.admin.domain.Payment
+import com.dmnarration.admin.domain.Payout
+import com.dmnarration.admin.domain.PayoutSummary
 import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.ui.describeDataFailure
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +31,17 @@ data class MoneyState(
     val expensesLoading: Boolean = true,
     val refreshing: Boolean = false,
     val payments: List<Payment> = emptyList(),
+    /**
+     * Money going out, joined to payments client-side on paymentId.
+     *
+     * Empty is NOT evidence there are none: payouts are admin-only at the
+     * database and RLS answers a non-admin with an empty list rather than an
+     * error. A screen that said "no payouts" on an empty read would be
+     * asserting something it cannot know.
+     */
+    val payouts: List<Payout> = emptyList(),
+    /** Null until it loads, and null again if it fails — never a zeroed pair. */
+    val payoutSummary: PayoutSummary? = null,
     val expenses: List<Expense> = emptyList(),
     val paymentsError: String? = null,
     val expensesError: String? = null,
@@ -94,6 +107,17 @@ class MoneyViewModel @Inject constructor(
             refreshing = !initial,
         )
         viewModelScope.launch {
+            // Loaded beside payments; its failure is its own. A payouts read
+            // that fails must not make the payments list look broken, and a
+            // failing payments list must not blank payouts that did read.
+            board.payouts().fold(
+                onSuccess = { _state.value = _state.value.copy(payouts = it) },
+                onFailure = { _state.value = _state.value.copy(payouts = emptyList()) },
+            )
+            board.payoutSummary().fold(
+                onSuccess = { _state.value = _state.value.copy(payoutSummary = it) },
+                onFailure = { _state.value = _state.value.copy(payoutSummary = null) },
+            )
             board.payments().fold(
                 onSuccess = { rows ->
                     _state.value = _state.value.copy(

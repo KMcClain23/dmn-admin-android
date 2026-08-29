@@ -22,6 +22,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dmnarration.admin.domain.OUTSTANDING_NOT_COMPUTED
 import com.dmnarration.admin.domain.Payment
+import com.dmnarration.admin.domain.Payout
+import com.dmnarration.admin.domain.PayoutSummary
 import com.dmnarration.admin.domain.paymentKindLabel
 import com.dmnarration.admin.domain.paymentDetail
 import com.dmnarration.admin.domain.paymentTitle
@@ -89,9 +91,9 @@ fun PaymentsScreen(
                     return@list
                 }
 
-                item { Totals(state.payments) }
+                item { Totals(state.payments, state.payoutSummary) }
                 item { NotComputed() }
-                rows(state.payments)
+                rows(state.payments, state.payouts)
             },
         )
     }
@@ -106,7 +108,7 @@ fun PaymentsScreen(
  * for a bad one.
  */
 @Composable
-private fun Totals(payments: List<Payment>) {
+private fun Totals(payments: List<Payment>, summary: PayoutSummary? = null) {
     val c = DmnTheme.colors
     // One object, so the headline and the lines under it cannot be computed from
     // different populations. The total IS the sum of the buckets.
@@ -145,6 +147,66 @@ private fun Totals(payments: List<Payment>) {
                 Text(money(bucket.amount), style = DmnType.Numeric, color = c.textPrimary)
             }
         }
+
+        // The payout position, as a PAIR. Rendered inside the same block as
+        // RECEIVED so it cannot be read as a separate liability — the two lines
+        // above it are money in, and this is what is committed against it.
+        summary?.takeIf { it.unpaidCount > 0 }?.let { PayoutPosition(it) }
+    }
+}
+
+/**
+ * Expected in, committed out, net — together, never a bare "owed".
+ *
+ * "$4,680 owed" alone reads as a debt. It is a deduction from income already
+ * earned: Dean pays the editor once the author pays him, and the author pays on
+ * delivery. Showing the three together is what makes that legible.
+ *
+ * expected in is DERIVED — word_count / words-per-finished-hour x pfh_rate, the
+ * same formula the stored payout amounts round to — so it is marked with ~ and
+ * called an estimate. The stored figure would win if there were one; there is
+ * not, on any of these rows.
+ */
+@Composable
+private fun PayoutPosition(summary: PayoutSummary) {
+    val c = DmnTheme.colors
+    Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+        Text("AGAINST WORK IN PROGRESS", style = DmnType.Label, color = c.textFaint)
+        Row(
+            Modifier.fillMaxWidth().padding(top = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("expected in (estimate)", style = DmnType.Body, color = c.textMuted)
+            Text("~${money(summary.expectedIn)}", style = DmnType.Numeric, color = c.textPrimary)
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "committed out · ${summary.unpaidCount} pending",
+                style = DmnType.Body,
+                color = c.textMuted,
+            )
+            Text("-${money(summary.committedOut)}", style = DmnType.Numeric, color = c.textPrimary)
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("net (estimate)", style = DmnType.BodyMedium, color = c.textBody)
+            Text("~${money(summary.net)}", style = DmnType.Numeric, color = c.accentAmberBright)
+        }
+        // A short figure that says it is short. Omitted entirely at zero rather
+        // than rendering "0 books" as reassurance nobody asked for.
+        if (summary.booksWithoutWordCount > 0) {
+            Text(
+                "${summary.booksWithoutWordCount} of these have no word count, so the estimate omits them",
+                style = DmnType.Small,
+                color = c.textDim,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
 
@@ -164,9 +226,11 @@ private fun NotComputed() {
     )
 }
 
-private fun LazyListScope.rows(payments: List<Payment>) {
+private fun LazyListScope.rows(payments: List<Payment>, payouts: List<Payout>) {
+    // Joined client-side on paymentId, as one map rather than a scan per row.
+    val byPayment = payouts.groupBy { it.paymentId }
     items(count = payments.size, key = { payments[it].id }) { i ->
-        PaymentRow(payments[i])
+        PaymentRow(payments[i], byPayment[payments[i].id].orEmpty())
     }
 }
 
@@ -180,7 +244,7 @@ private fun LazyListScope.rows(payments: List<Payment>) {
  * and takes nothing away.
  */
 @Composable
-private fun PaymentRow(payment: Payment) {
+private fun PaymentRow(payment: Payment, payouts: List<Payout> = emptyList()) {
     val c = DmnTheme.colors
     var expanded by remember(payment.id) { mutableStateOf(false) }
     val hasNote = payment.notes != null
@@ -218,6 +282,8 @@ private fun PaymentRow(payment: Payment) {
                 modifier = Modifier.padding(start = 12.dp),
             )
         }
+
+        for (payout in payouts) { PayoutLine(payout) }
 
         payment.notes?.let {
             Text(
@@ -275,3 +341,52 @@ private val MONTHS = listOf(
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 )
+
+
+/**
+ * Money going OUT against this payment.
+ *
+ * QUEUED, NOT OVERDUE. Dean pays the editor once the author pays him, and the
+ * author pays when the book goes live — so an unpaid payout is waiting on
+ * delivery, not missed. No red, no warning iconography; "pending" in the muted
+ * colour the rest of the secondary text uses.
+ *
+ * paid_via and notes are empty strings on all eight unpaid rows, and empty
+ * renders as NOTHING — no label, no dash placeholder standing in for a value
+ * nobody entered.
+ */
+@Composable
+private fun PayoutLine(payout: Payout) {
+    val c = DmnTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(top = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            buildString {
+                append(payout.kind.replaceFirstChar { it.uppercase() })
+                append(" payout to ")
+                append(payout.payeeName)
+            },
+            style = DmnType.Small,
+            color = c.textMuted,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            buildString {
+                append("-").append(money(payout.amount))
+                append(" · ")
+                append(
+                    payout.paidOn?.let { "paid ${shortDate(it)}" } ?: "pending",
+                )
+                payout.paidVia.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+            },
+            style = DmnType.Small,
+            color = c.textMuted,
+            modifier = Modifier.padding(start = 8.dp),
+        )
+    }
+    payout.notes.takeIf { it.isNotBlank() }?.let {
+        Text(it, style = DmnType.Small, color = c.textDim)
+    }
+}

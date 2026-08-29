@@ -306,3 +306,96 @@ fun paymentDetail(payment: Payment): String {
     val period = payment.period.takeIf { it.isNotBlank() }
     return listOfNotNull(category, period).joinToString(" · ")
 }
+
+/**
+ * Money going OUT against a payment — an editor's fee, so far.
+ *
+ * Stage 8 closed payment_payouts to a hard deny; this is the shape behind the
+ * grant that reopened it, admin-only and read-only.
+ *
+ * UNPAID IS QUEUED, NOT OVERDUE. Dean pays the editor once the author pays him,
+ * and the author pays when the book goes live, so a null paidOn means "waiting
+ * on delivery" rather than "missed". Nothing in the UI for these carries red or
+ * warning iconography.
+ */
+data class Payout(
+    override val id: String,
+    val paymentId: String,
+    val payeeName: String,
+    val kind: String,
+    val amount: Double,
+    val paidOn: LocalDate?,
+    val ratePfh: Double?,
+    /** Empty on all eight unpaid rows. Empty renders as nothing, not as a dash. */
+    val paidVia: String,
+    val notes: String,
+) : Identified {
+    val isPaid: Boolean get() = paidOn != null
+}
+
+/**
+ * What a book is expected to bring IN, from the same formula the payouts use.
+ *
+ * The nine payout amounts all equal round(word_count / wordsPerFinishedHour x
+ * rate_pfh) to the dollar, so the figures are formula-derived rather than
+ * hand-entered — 638.30 stored as 638, 489.36 as 489, and so on. The same
+ * formula with Dean's own pfh_rate gives his side.
+ *
+ * Null when the word count cannot answer. A book with no word count renders
+ * NOTHING here, not $0 — zero would assert the work is worth nothing rather
+ * than that nobody has entered a length.
+ */
+fun expectedIncome(wordCount: Int?, pfhRate: Double?, wordsPerFinishedHour: Int?): Double? {
+    if (wordCount == null || wordCount <= 0) return null
+    if (pfhRate == null || pfhRate <= 0) return null
+    if (wordsPerFinishedHour == null || wordsPerFinishedHour <= 0) return null
+    return wordCount.toDouble() / wordsPerFinishedHour * pfhRate
+}
+
+/**
+ * The figure to show for what a payment is worth, and whether it is an estimate.
+ *
+ * AMOUNT_EXPECTED WINS whenever it is non-null. The computed figure appears only
+ * where the stored one is absent — two representations of one number in the UI
+ * layer is two sources for one figure, and this project has already paid for
+ * that once on the card screen.
+ *
+ * Returns null when neither can answer, so the caller renders nothing.
+ */
+data class MoneyFigure(val amount: Double, val isEstimate: Boolean)
+
+fun paymentWorth(
+    amountExpected: Double?,
+    wordCount: Int?,
+    pfhRate: Double?,
+    wordsPerFinishedHour: Int?,
+): MoneyFigure? {
+    if (amountExpected != null) return MoneyFigure(amountExpected, isEstimate = false)
+    val computed = expectedIncome(wordCount, pfhRate, wordsPerFinishedHour) ?: return null
+    return MoneyFigure(computed, isEstimate = true)
+}
+
+/**
+ * The payout position, as a PAIR and never as a bare liability.
+ *
+ * "$4,680 owed" alone misrepresents the business: the money goes out only after
+ * money comes in, so the figure is a deduction from income already earned, not
+ * a debt. The three travel together so a caller cannot render one without the
+ * others.
+ *
+ * Scoped to UNPAID payouts. A paid one has settled and its book's income is no
+ * longer expected; counting it would make `net` describe a position that does
+ * not exist.
+ */
+data class PayoutSummary(
+    val expectedIn: Double,
+    val committedOut: Double,
+    val net: Double,
+    val unpaidCount: Int,
+    val paidCount: Int,
+    /** Unpaid payouts whose book has no word count, so expectedIn omits them. */
+    val booksWithoutWordCount: Int,
+) {
+    /** expectedIn is derived, not stored, so it is always shown as an estimate. */
+    val expectedIsEstimate: Boolean get() = true
+}
