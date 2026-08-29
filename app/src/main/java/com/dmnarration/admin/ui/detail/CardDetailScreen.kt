@@ -32,6 +32,8 @@ import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.Chapter
 import com.dmnarration.admin.domain.chapterStatusLabel
 import com.dmnarration.admin.domain.parseCoNarrators
+import com.dmnarration.admin.domain.pageLine
+import com.dmnarration.admin.domain.progressFraction
 import com.dmnarration.admin.domain.recordedFraction
 import com.dmnarration.admin.ui.board.PullToRefreshSurface
 import com.dmnarration.admin.ui.board.ScrollableContent
@@ -256,7 +258,7 @@ private fun Header(d: CardDetail, capabilities: Capabilities) {
 
 @Composable
 private fun Progress(d: CardDetail) {
-    val fraction = d.recordedFraction() ?: return
+    val fraction = d.progressFraction() ?: return
     val c = DmnTheme.colors
     Column(Modifier.padding(top = 10.dp)) {
         Box(
@@ -270,8 +272,12 @@ private fun Progress(d: CardDetail) {
                     .background(c.accentAmber),
             )
         }
+        // Percentage always; the page line additionally when the book has one.
         Text(
-            "${(fraction * 100).roundToInt()}% recorded",
+            buildString {
+                append("${(fraction * 100).roundToInt()}% recorded")
+                d.pageLine()?.let { append(" · ").append(it) }
+            },
             style = DmnType.Small,
             color = c.textDim,
             modifier = Modifier.padding(top = 4.dp),

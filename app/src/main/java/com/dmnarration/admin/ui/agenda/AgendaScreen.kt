@@ -29,6 +29,8 @@ import com.dmnarration.admin.domain.relativeDeadline
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.DUE_SOON_DAYS
 import com.dmnarration.admin.domain.daysUntil
+import com.dmnarration.admin.domain.pageLine
+import com.dmnarration.admin.domain.progressFraction
 import com.dmnarration.admin.domain.recordedFraction
 import com.dmnarration.admin.ui.board.PullToRefreshSurface
 import com.dmnarration.admin.ui.board.ScrollableContent
@@ -212,7 +214,10 @@ private fun AgendaCard(
  */
 @Composable
 private fun ProgressLine(card: BoardCard) {
-    val fraction = recordedFraction(card) ?: return
+    // Pages where there are pages, words otherwise — see progressFraction. A
+    // book with neither shows no bar rather than 0%, which would assert that
+    // nothing has been recorded rather than that nobody knows.
+    val fraction = progressFraction(card) ?: return
     val c = DmnTheme.colors
     Column(Modifier.padding(top = 8.dp)) {
         Box(
@@ -230,8 +235,14 @@ private fun ProgressLine(card: BoardCard) {
                     .background(c.accentAmber),
             )
         }
+        // The percentage always. The page line ADDITIONALLY, when the book has
+        // pages — context on top rather than a rival measure, and no empty row
+        // for the books that have none.
         Text(
-            "${(fraction * 100).roundToInt()}% recorded",
+            buildString {
+                append("${(fraction * 100).roundToInt()}% recorded")
+                pageLine(card)?.let { append(" · ").append(it) }
+            },
             style = DmnType.Small,
             color = c.textDim,
             modifier = Modifier.padding(top = 4.dp),

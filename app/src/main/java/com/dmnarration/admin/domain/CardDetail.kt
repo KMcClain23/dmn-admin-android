@@ -80,6 +80,28 @@ data class CardDetail(
  * denominator `narrationPlan` uses, taken from the same [narratorShareOf] rather than
  * re-derived. See the note on the board's `recordedFraction`.
  */
+/**
+ * How far through, preferring the page position. The card's counterpart to
+ * BoardCard.progressFraction, and deliberately the same rule: a book must not
+ * read one way on Today and another on its own card.
+ */
+fun CardDetail.progressFraction(): Double? {
+    val total = totalPages
+    val current = currentPage
+    if (total != null && total > 0 && current != null && current >= 0) {
+        return (current.toDouble() / total).coerceIn(0.0, 1.0)
+    }
+    return recordedFraction()
+}
+
+/** "page 132 of 259", or null when the book has no page count. */
+fun CardDetail.pageLine(): String? {
+    val total = totalPages ?: return null
+    if (total <= 0) return null
+    val current = currentPage ?: return null
+    return "page $current of $total"
+}
+
 fun CardDetail.recordedFraction(): Double? {
     val total = wordCount ?: return null
     if (total <= 0) return null

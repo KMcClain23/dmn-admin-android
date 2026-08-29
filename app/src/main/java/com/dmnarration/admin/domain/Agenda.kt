@@ -287,6 +287,42 @@ fun relativeDeadline(deadline: LocalDate, today: LocalDate): String {
  * above the share is a matter of time, and it must read as finished rather than as
  * more-than-finished.
  */
+/**
+ * How far through the book, preferring the page position when there is one.
+ *
+ * The two agree by construction wherever both exist: apply_card_rules derives
+ * words_recorded as word_count x share x (current_page / total_pages), so the
+ * page ratio and the word ratio are the same number. Pages are preferred
+ * anyway, because they are what was ENTERED — the words are the derivation, and
+ * showing the derived figure where the source is available adds a rounding step
+ * for nothing.
+ *
+ * Where they do NOT agree is the case this exists for. Hexes & Heartbreakers
+ * has no word count, so its words_recorded is 0 and recordedFraction gives up
+ * entirely — a book genuinely half narrated would show no progress at all.
+ * Its pages still say exactly where it is.
+ *
+ * Null only when neither source can answer. A book with no pages AND no word
+ * count has no progress to show, and showing 0% would assert that nothing has
+ * been recorded rather than that nobody knows.
+ */
+fun progressFraction(card: BoardCard): Double? {
+    val total = card.totalPages
+    val current = card.currentPage
+    if (total != null && total > 0 && current != null && current >= 0) {
+        return (current.toDouble() / total).coerceIn(0.0, 1.0)
+    }
+    return recordedFraction(card)
+}
+
+/** "page 132 of 259", or null when the book has no page count. */
+fun pageLine(card: BoardCard): String? {
+    val total = card.totalPages ?: return null
+    if (total <= 0) return null
+    val current = card.currentPage ?: return null
+    return "page $current of $total"
+}
+
 fun recordedFraction(card: BoardCard): Double? {
     val total = card.wordCount ?: return null
     if (total <= 0) return null
