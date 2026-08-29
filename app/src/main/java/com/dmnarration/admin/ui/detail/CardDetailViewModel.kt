@@ -8,6 +8,9 @@ import com.dmnarration.admin.data.CardAccessNotEnabledException
 import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.Capabilities
 import com.dmnarration.admin.domain.FieldWrite
+import com.dmnarration.admin.domain.Pickup
+import com.dmnarration.admin.domain.PickupKind
+import com.dmnarration.admin.domain.PickupStatus
 import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.domain.WRITE_REFUSED_MESSAGE
 import com.dmnarration.admin.domain.serverRefusalMessage
@@ -35,6 +38,12 @@ data class CardDetailUiState(
     /** The id matched nothing. Not a refusal, and not an error. */
     val missing: Boolean = false,
     val capabilities: Capabilities = Capabilities.of(UserRole.EDITOR),
+    /** Pickups on THIS card. Empty until the read returns. */
+    val pickups: List<Pickup> = emptyList(),
+    /** Whose session this is, so the UI only offers actions the server will allow. */
+    val userId: String? = null,
+    /** A pickup write that failed. Separate from `error`, which is the card read. */
+    val pickupError: String? = null,
     /**
      * Per-COLUMN write state. One card has two dozen editable fields and two of
      * them can be in flight at once; a single saving/error pair on the screen
@@ -57,9 +66,12 @@ class CardDetailViewModel @Inject constructor(
 
     /** Held so a refresh routes the same way the first load did. */
     private var role: UserRole = UserRole.UNKNOWN
+    private var userId: String? = null
 
-    fun start(cardId: String, role: UserRole) {
+    fun start(cardId: String, role: UserRole, userId: String? = null) {
         this.role = role
+        this.userId = userId
+        _state.value = _state.value.copy(userId = userId)
         _state.value = _state.value.copy(capabilities = Capabilities.of(role))
         if (loadedId == cardId) return
         loadedId = cardId
@@ -158,6 +170,7 @@ class CardDetailViewModel @Inject constructor(
             )
             board.cardDetail(cardId, role)
                 .onSuccess { detail ->
+                    launch { loadPickups() }
                     _state.value = _state.value.copy(
                         loading = false,
                         refreshing = false,
@@ -200,5 +213,79 @@ class CardDetailViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "CardDetailViewModel"
+    }
+
+    // ── Editing progress and pickups ────────────────────────────────────────
+    //
+    // Every one of these is a SECURITY DEFINER function with a role gate. The
+    // screen decides which buttons to draw; the SERVER decides what happens. A
+    // refusal is surfaced, never swallowed — an action that silently does
+    // nothing is the failure this project keeps paying for.
+
+    fun setProgress(edited: Int?, total: Int?) = write {
+        board.setEditingProgress(requireNotNull(loadedId), edited, total)
+    }
+
+    fun markComplete(complete: Boolean) = write {
+        board.setEditingComplete(requireNotNull(loadedId), complete)
+    }
+
+    fun raisePickup(
+        chapter: String, timestampAt: String, kind: PickupKind,
+        said: String, shouldBe: String, note: String, assignedTo: String,
+    ) = write {
+        board.createPickup(
+            requireNotNull(loadedId), chapter, timestampAt, kind, said, shouldBe, note, assignedTo,
+        ).map { }
+    }
+
+    fun editPickup(
+        id: String, chapter: String, timestampAt: String, kind: PickupKind,
+        said: String, shouldBe: String, note: String, assignedTo: String,
+    ) = write {
+        board.updateOwnDraftPickup(id, chapter, timestampAt, kind, said, shouldBe, note, assignedTo)
+    }
+
+    fun deletePickup(id: String) = write { board.deleteOwnDraftPickup(id) }
+
+    /** draft -> sent for one chapter. No email in this stage; E3 hangs it here. */
+    fun sendChapter(chapter: String) = write {
+        board.sendChapterPickups(requireNotNull(loadedId), chapter).map { }
+    }
+
+    fun resolvePickup(id: String, status: PickupStatus) = write {
+        board.resolvePickup(id, status)
+    }
+
+    /**
+     * Run a write, then re-read.
+     *
+     * The re-read is not optimism about the write: it is how the screen learns
+     * what the server actually stored, including anything a trigger changed. An
+     * optimistic local update would show the value the client hoped for.
+     */
+    private fun write(block: suspend () -> Result<Unit>) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(pickupError = null)
+            block()
+                .onSuccess { loadedId?.let { load(it, initial = false) } }
+                .onFailure { t ->
+                    _state.value = _state.value.copy(
+                        pickupError = t.message ?: "That did not go through.",
+                    )
+                }
+        }
+    }
+
+    private suspend fun loadPickups() {
+        board.pickups(role)
+            .onSuccess { all ->
+                _state.value = _state.value.copy(
+                    pickups = all.filter { it.cardId == loadedId },
+                )
+            }
+            // A failed pickup read must not blank the card. The card is the
+            // subject; pickups are an addition to it.
+            .onFailure { /* leave the previous list in place */ }
     }
 }

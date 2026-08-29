@@ -71,7 +71,13 @@ data class CardDetail(
     val amazonRating: Double?,
     val amazonReviewCount: Int?,
     val createdAt: Instant?,
-)
+    val chaptersEdited: Int? = null,
+    val chaptersTotal: Int? = null,
+    val editingCompletedAt: Instant? = null,
+) {
+    /** Derived, never stored — see [editingStateOf]. */
+    val editingState: EditingState get() = editingStateOf(chaptersEdited, editingCompletedAt)
+}
 
 /**
  * How far through recording, clamped, or null when the share cannot be resolved.

@@ -187,7 +187,7 @@ private fun AppRoot(modifier: Modifier = Modifier) {
                 }
             }
 
-            is AuthState.SignedIn -> BoardRoute(role = s.role, onSignOut = app::signOut)
+            is AuthState.SignedIn -> BoardRoute(role = s.role, userId = s.userId, onSignOut = app::signOut)
         }
     }
 }
@@ -238,6 +238,8 @@ private fun destinationsFor(capabilities: Capabilities): List<Destination> =
 @Composable
 private fun BoardRoute(
     role: com.dmnarration.admin.domain.UserRole,
+    /** Whose session this is; the pickup UI needs it to know which rows are hers. */
+    userId: String?,
     onSignOut: () -> Unit,
 ) {
     val vm: BoardViewModel = hiltViewModel()
@@ -376,7 +378,7 @@ private fun BoardRoute(
     selectedCardId?.let { cardId ->
         val detailVm: CardDetailViewModel = hiltViewModel(key = cardId)
         val detailState by detailVm.state.collectAsStateWithLifecycle()
-        LaunchedEffect(cardId, role) { detailVm.start(cardId, role) }
+        LaunchedEffect(cardId, role) { detailVm.start(cardId, role, userId) }
 
         BackHandler { selectedCardId = null }
 
@@ -388,6 +390,12 @@ private fun BoardRoute(
                 onRefresh = detailVm::refresh,
                 onSaveField = detailVm::save,
                 onEditField = detailVm::clearWrite,
+                onSetProgress = detailVm::setProgress,
+                onMarkComplete = detailVm::markComplete,
+                onRaisePickup = detailVm::raisePickup,
+                onDeletePickup = detailVm::deletePickup,
+                onSendChapter = detailVm::sendChapter,
+                onResolvePickup = detailVm::resolvePickup,
             )
         }
     }

@@ -55,7 +55,15 @@ data class BoardCard(
      * would return a row with this null and the card would reappear.
      */
     val archivedAt: Instant? = null,
-) : Identified
+    /** Chapters the editor has finished. Null means not started. */
+    val chaptersEdited: Int? = null,
+    val chaptersTotal: Int? = null,
+    /** Set when editing is marked complete. THIS is the done flag; there is no boolean. */
+    val editingCompletedAt: Instant? = null,
+) : Identified {
+    /** Derived, never stored — see [editingStateOf]. */
+    val editingState: EditingState get() = editingStateOf(chaptersEdited, editingCompletedAt)
+}
 
 /** Deadline colouring. Same three states the web pills use. */
 enum class Urgency { DEFAULT, YELLOW, RED }

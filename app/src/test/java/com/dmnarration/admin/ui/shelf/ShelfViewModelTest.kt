@@ -11,6 +11,9 @@ import com.dmnarration.admin.domain.Expense
 import com.dmnarration.admin.domain.Payment
 import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.ReleasedBook
+import com.dmnarration.admin.domain.Pickup
+import com.dmnarration.admin.domain.PickupKind
+import com.dmnarration.admin.domain.PickupStatus
 import com.dmnarration.admin.domain.UserRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -76,6 +79,17 @@ class ShelfViewModelTest {
             Result.success(null)
         override suspend fun cardDetail(cardId: String, role: UserRole): Result<CardDetail?> = Result.success(null)
 
+
+        // E2 write path. These fakes exist to test the board/shelf/money joins,
+        // not the editor's writes, so they accept and record nothing.
+        override suspend fun pickups(role: UserRole): Result<List<Pickup>> = Result.success(emptyList())
+        override suspend fun setEditingProgress(cardId: String, chaptersEdited: Int?, chaptersTotal: Int?): Result<Unit> = Result.success(Unit)
+        override suspend fun setEditingComplete(cardId: String, complete: Boolean): Result<Unit> = Result.success(Unit)
+        override suspend fun createPickup(cardId: String, chapter: String, timestampAt: String, kind: PickupKind, said: String, shouldBe: String, note: String, assignedTo: String): Result<String> = Result.success("fake-id")
+        override suspend fun updateOwnDraftPickup(id: String, chapter: String, timestampAt: String, kind: PickupKind, said: String, shouldBe: String, note: String, assignedTo: String): Result<Unit> = Result.success(Unit)
+        override suspend fun deleteOwnDraftPickup(id: String): Result<Unit> = Result.success(Unit)
+        override suspend fun sendChapterPickups(cardId: String, chapter: String): Result<Int> = Result.success(0)
+        override suspend fun resolvePickup(id: String, status: PickupStatus): Result<Unit> = Result.success(Unit)
         override suspend fun released(): Result<List<ReleasedBook>> =
             releasedFailure?.let { Result.failure(it) } ?: Result.success(releasedRows)
 

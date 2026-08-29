@@ -24,7 +24,17 @@ import kotlin.time.Duration.Companion.seconds
 sealed interface AuthState {
     data object Loading : AuthState
     data object SignedOut : AuthState
-    data class SignedIn(val role: UserRole, val email: String?) : AuthState
+    data class SignedIn(
+        val role: UserRole,
+        val email: String?,
+        /**
+         * Needed by the pickup UI: update_own_pickup and delete_own_pickup check
+         * created_by = auth.uid(), so the screen must know whose session this is
+         * to avoid offering an action the server will refuse. The SERVER is still
+         * the boundary — this only decides which buttons are drawn.
+         */
+        val userId: String? = null,
+    ) : AuthState
 
     /**
      * The account's role is missing or unrecognised, so its permissions cannot
@@ -145,7 +155,7 @@ class AppViewModel @Inject constructor(
             return
         }
         resolvedUserId = userId
-        _state.value = AuthState.SignedIn(role, email ?: sessions.currentEmail)
+        _state.value = AuthState.SignedIn(role, email ?: sessions.currentEmail, userId)
     }
 
     fun signIn(email: String, password: String) {

@@ -300,6 +300,7 @@ private fun SectionList(
                         onClick = { onOpenCard(cards[i]) },
                         onToggleFirst15 = { onToggleFirst15(cards[i].id) },
                         onLongPress = { onLongPress(cards[i]) },
+                        awaitingPickups = state.awaitingPickups[cards[i].id] ?: 0,
                     )
                 }
             }

@@ -17,6 +17,7 @@ import com.dmnarration.admin.domain.PipelineBucket
 import com.dmnarration.admin.domain.ProductionSubgroup
 import com.dmnarration.admin.domain.SiteSettings
 import com.dmnarration.admin.domain.StudioSettings
+import com.dmnarration.admin.domain.PickupStatus
 import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.ui.describeDataFailure
 import com.dmnarration.admin.domain.archiveNotes
@@ -47,6 +48,17 @@ data class BoardUiState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val capabilities: Capabilities = Capabilities.of(UserRole.UNKNOWN),
+    /**
+     * SENT pickups per card id — the ones waiting on Dean, countable without
+     * opening a card. Drafts are deliberately NOT counted here: they are the
+     * editor's working state and not yet a request to anybody.
+     *
+     * Absent means none — a card with no entry has nothing outstanding. A failed
+     * pickup read leaves the previous map in place rather than emptying it: an
+     * empty map says "nothing to re-record", which is a claim, and a read that
+     * did not happen is not entitled to make it.
+     */
+    val awaitingPickups: Map<String, Int> = emptyMap(),
     val settings: StudioSettings = DEFAULT_STUDIO_SETTINGS,
     /**
      * The day every date on screen was measured against.
@@ -173,6 +185,18 @@ class BoardViewModel @Inject constructor(
             // derived figure blanks itself and everything else renders as usual.
             val settings = site?.studio?.settings
                 ?: StudioSettings(null, null, null, null, null)
+
+            launch {
+                board.pickups(role)
+                    .onSuccess { all ->
+                        _state.value = _state.value.copy(
+                            awaitingPickups = all
+                                .filter { it.status == PickupStatus.SENT }
+                                .groupingBy { it.cardId }.eachCount(),
+                        )
+                    }
+                    .onFailure { /* keep the previous counts; see openPickups */ }
+            }
 
             board.loadBoard(role)
                 .onSuccess { cards ->

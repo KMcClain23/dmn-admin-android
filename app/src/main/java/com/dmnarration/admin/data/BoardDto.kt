@@ -51,6 +51,9 @@ data class BoardCardDto(
     val total_pages: Int? = null,
     val current_page: Int? = null,
     val created_at: String? = null,
+    val chapters_edited: Int? = null,
+    val chapters_total: Int? = null,
+    val editing_completed_at: String? = null,
     /** Absent from the board read, present in the write's select. */
     val archived_at: String? = null,
 )
@@ -119,6 +122,9 @@ fun BoardCardDto.toDomain(): BoardCard = BoardCard(
     // archived_at reads as "not archived", which puts the card back on the board.
     // That is the one silent default here that changes what Dean sees.
     archivedAt = instantOrNull(archived_at),
+    chaptersEdited = chapters_edited,
+    chaptersTotal = chapters_total,
+    editingCompletedAt = instantOrNull(editing_completed_at),
 )
 
 @Serializable

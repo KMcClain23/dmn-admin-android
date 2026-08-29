@@ -63,6 +63,9 @@ data class CardDetailDto(
     val amazon_rating: Double? = null,
     val amazon_review_count: Int? = null,
     val created_at: String? = null,
+    val chapters_edited: Int? = null,
+    val chapters_total: Int? = null,
+    val editing_completed_at: String? = null,
 )
 
 /**
@@ -143,4 +146,7 @@ fun CardDetailDto.toDomain(): CardDetail = CardDetail(
     amazonRating = amazon_rating,
     amazonReviewCount = amazon_review_count,
     createdAt = instant(created_at),
+    chaptersEdited = chapters_edited,
+    chaptersTotal = chapters_total,
+    editingCompletedAt = instant(editing_completed_at),
 )

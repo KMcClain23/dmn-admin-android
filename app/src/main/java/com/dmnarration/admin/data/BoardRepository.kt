@@ -13,6 +13,10 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.dmnarration.admin.domain.BoardCard
+import com.dmnarration.admin.domain.Pickup
+import com.dmnarration.admin.domain.PickupKind
+import com.dmnarration.admin.domain.PickupStatus
+import kotlinx.serialization.json.JsonObjectBuilder
 import com.dmnarration.admin.domain.UserRole
 import com.dmnarration.admin.domain.SettingKeys
 import com.dmnarration.admin.domain.SiteSettings
@@ -99,6 +103,44 @@ interface BoardRepository {
      * with the predicate applied where it is read. Refusal is
      * [BoardAccessNotEnabledException], never an empty list.
      */
+    /**
+     * Every pickup, routed by role exactly as the board reads are.
+     *
+     * The two functions return the same shape and differ only in their gate, so
+     * a stale ADMIN hits pickups_for_session and the server refuses; a stale
+     * EDITOR hits pickups_for_editor and gets the same rows. UNKNOWN calls
+     * nothing.
+     */
+    suspend fun pickups(role: UserRole): Result<List<Pickup>>
+
+    /**
+     * The editor's writes. Every one goes through a SECURITY DEFINER function
+     * with a role gate — `authenticated` has no write grant on board_cards for
+     * these columns and no grant at all on pickups, so there is no other route.
+     */
+    suspend fun setEditingProgress(cardId: String, chaptersEdited: Int?, chaptersTotal: Int?): Result<Unit>
+    suspend fun setEditingComplete(cardId: String, complete: Boolean): Result<Unit>
+    suspend fun createPickup(
+        cardId: String, chapter: String, timestampAt: String, kind: PickupKind,
+        said: String, shouldBe: String, note: String, assignedTo: String,
+    ): Result<String>
+
+    suspend fun updateOwnDraftPickup(
+        id: String, chapter: String, timestampAt: String, kind: PickupKind,
+        said: String, shouldBe: String, note: String, assignedTo: String,
+    ): Result<Unit>
+
+    suspend fun deleteOwnDraftPickup(id: String): Result<Unit>
+
+    /**
+     * draft -> sent for one chapter, and the seam E3 hangs the email on.
+     * NOTHING is emailed here; the transition is the whole of this stage.
+     */
+    suspend fun sendChapterPickups(cardId: String, chapter: String): Result<Int>
+
+    /** ADMIN ONLY. Gated by assert_board_access; an editor is refused. */
+    suspend fun resolvePickup(id: String, status: PickupStatus): Result<Unit>
+
     suspend fun released(): Result<List<ReleasedBook>>
 
     /** Everything archived, whatever its status. Refusal is an exception, not zero rows. */
@@ -259,6 +301,100 @@ class SupabaseBoardRepository @Inject constructor(
      * free to drift from the one the web uses; the list is rendered in the order
      * it arrives and `ShelfTest` pins that.
      */
+    override suspend fun pickups(role: UserRole): Result<List<Pickup>> = runCatching {
+        val rpc = when (role) {
+            UserRole.ADMIN -> PICKUPS_RPC
+            UserRole.EDITOR -> PICKUPS_EDITOR_RPC
+            UserRole.UNKNOWN -> throw BoardAccessNotEnabledException()
+        }
+        try {
+            client.postgrest.rpc(rpc).decodeList<PickupDto>().map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
+    override suspend fun setEditingProgress(
+        cardId: String,
+        chaptersEdited: Int?,
+        chaptersTotal: Int?,
+    ): Result<Unit> = rpcUnit("set_editing_progress") {
+        put("p_card_id", cardId)
+        if (chaptersEdited == null) put("p_chapters_edited", JsonNull) else put("p_chapters_edited", chaptersEdited)
+        if (chaptersTotal == null) put("p_chapters_total", JsonNull) else put("p_chapters_total", chaptersTotal)
+    }
+
+    override suspend fun setEditingComplete(cardId: String, complete: Boolean): Result<Unit> =
+        rpcUnit("set_editing_complete") {
+            put("p_card_id", cardId)
+            put("p_complete", complete)
+        }
+
+    override suspend fun createPickup(
+        cardId: String, chapter: String, timestampAt: String, kind: PickupKind,
+        said: String, shouldBe: String, note: String, assignedTo: String,
+    ): Result<String> = runCatching {
+        try {
+            client.postgrest.rpc("create_pickup", buildJsonObject {
+                put("p_card_id", cardId); put("p_chapter", chapter)
+                put("p_timestamp_at", timestampAt); put("p_kind", kind.stored)
+                put("p_said", said); put("p_should_be", shouldBe)
+                put("p_note", note); put("p_assigned_to", assignedTo)
+            }).decodeAs<String>()
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
+    override suspend fun updateOwnDraftPickup(
+        id: String, chapter: String, timestampAt: String, kind: PickupKind,
+        said: String, shouldBe: String, note: String, assignedTo: String,
+    ): Result<Unit> = rpcUnit("update_own_draft_pickup") {
+        put("p_id", id); put("p_chapter", chapter)
+        put("p_timestamp_at", timestampAt); put("p_kind", kind.stored)
+        put("p_said", said); put("p_should_be", shouldBe)
+        put("p_note", note); put("p_assigned_to", assignedTo)
+    }
+
+    override suspend fun deleteOwnDraftPickup(id: String): Result<Unit> =
+        rpcUnit("delete_own_draft_pickup") { put("p_id", id) }
+
+    override suspend fun sendChapterPickups(cardId: String, chapter: String): Result<Int> =
+        runCatching {
+            try {
+                client.postgrest.rpc("send_chapter_pickups", buildJsonObject {
+                    put("p_card_id", cardId); put("p_chapter", chapter)
+                }).decodeAs<Int>()
+            } catch (t: Throwable) {
+                if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+            }
+        }
+
+    override suspend fun resolvePickup(id: String, status: PickupStatus): Result<Unit> =
+        rpcUnit("resolve_pickup") {
+            put("p_id", id); put("p_status", status.stored)
+        }
+
+    /**
+     * The shared shape of a void RPC.
+     *
+     * A refusal is translated once, here, so every write reports it the same
+     * way. Anything else keeps its own identity — conflating "no connection"
+     * with "you may not do that" is the same confident wrong answer in the other
+     * direction.
+     */
+    private suspend fun rpcUnit(
+        name: String,
+        args: JsonObjectBuilder.() -> Unit,
+    ): Result<Unit> = runCatching {
+        try {
+            client.postgrest.rpc(name, buildJsonObject(args))
+            Unit
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
     override suspend fun released(): Result<List<ReleasedBook>> = runCatching {
         try {
             client.postgrest.rpc(RELEASED_RPC)
@@ -359,6 +495,8 @@ class SupabaseBoardRepository @Inject constructor(
          * both.
          */
         const val BOARD_EDITOR_RPC = "board_for_editor"
+        const val PICKUPS_RPC = "pickups_for_session"
+        const val PICKUPS_EDITOR_RPC = "pickups_for_editor"
         const val CARD_RPC = "card_detail"
 
         /**

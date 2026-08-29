@@ -98,6 +98,11 @@ fun BoardCardItem(
     onClick: () -> Unit,
     onToggleFirst15: () -> Unit = {},
     onLongPress: () -> Unit = {},
+    /**
+     * Pickups SENT and awaiting a decision. Zero draws nothing — a "0" badge is
+     * noise on every card that is fine, which is most of them.
+     */
+    awaitingPickups: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val c = DmnTheme.colors
@@ -160,6 +165,22 @@ fun BoardCardItem(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+                    // Pickups outstanding, countable without opening the card.
+                    if (awaitingPickups > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(c.pillNeutralBg)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                if (awaitingPickups == 1) "1 pickup" else "$awaitingPickups pickups",
+                                style = DmnType.Label,
+                                color = c.pillNeutralText,
+                            )
+                        }
+                    }
                     if (format != null) {
                         Spacer(Modifier.width(8.dp))
                         Box(

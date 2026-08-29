@@ -29,6 +29,8 @@ import coil3.compose.AsyncImage
 import com.dmnarration.admin.domain.CHAPTER_STATUS_ORDER
 import com.dmnarration.admin.domain.Capabilities
 import com.dmnarration.admin.domain.CardDetail
+import com.dmnarration.admin.domain.PickupKind
+import com.dmnarration.admin.domain.PickupStatus
 import com.dmnarration.admin.domain.Chapter
 import com.dmnarration.admin.domain.chapterStatusLabel
 import com.dmnarration.admin.domain.parseCoNarrators
@@ -65,6 +67,12 @@ fun CardDetailScreen(
     onRefresh: () -> Unit,
     onSaveField: (String, String) -> Unit,
     onEditField: (String) -> Unit,
+    onSetProgress: (Int?, Int?) -> Unit,
+    onMarkComplete: (Boolean) -> Unit,
+    onRaisePickup: (String, String, PickupKind, String, String, String, String) -> Unit,
+    onDeletePickup: (String) -> Unit,
+    onSendChapter: (String) -> Unit,
+    onResolvePickup: (String, PickupStatus) -> Unit,
 ) {
     val c = DmnTheme.colors
     val detail = state.detail
@@ -114,7 +122,11 @@ fun CardDetailScreen(
                     state.missing -> item {
                         Text("That card no longer exists.", style = DmnType.Body, color = c.textMuted)
                     }
-                    detail != null -> detailBody(detail, capabilities, state, onSaveField, onEditField)
+                    detail != null -> detailBody(
+                        detail, capabilities, state, onSaveField, onEditField,
+                        onSetProgress, onMarkComplete, onRaisePickup,
+                        onDeletePickup, onSendChapter, onResolvePickup,
+                    )
                     state.loading -> item {
                         Text("Loading…", style = DmnType.Body, color = c.textFaint)
                     }
@@ -130,6 +142,12 @@ private fun LazyListScope.detailBody(
     state: CardDetailUiState,
     onSaveField: (String, String) -> Unit,
     onEditField: (String) -> Unit,
+    onSetProgress: (Int?, Int?) -> Unit,
+    onMarkComplete: (Boolean) -> Unit,
+    onRaisePickup: (String, String, PickupKind, String, String, String, String) -> Unit,
+    onDeletePickup: (String) -> Unit,
+    onSendChapter: (String) -> Unit,
+    onResolvePickup: (String, PickupStatus) -> Unit,
 ) {
     item { Header(d, capabilities) }
 
@@ -178,6 +196,37 @@ private fun LazyListScope.detailBody(
                 }
             }
         }
+    }
+
+    // Editing progress and pickups. Both are non-financial and both are the
+    // editor's, so they sit above the descriptive sections rather than at the
+    // bottom with the links.
+    item {
+        EditingSection(
+            detail = d,
+            // An editor may write these; so may Dean, because the gate admits
+            // admin too. Anyone who can see the card can record progress on it.
+            canEdit = true,
+            onSetProgress = onSetProgress,
+            onMarkComplete = onMarkComplete,
+        )
+    }
+    item {
+        PickupsSection(
+            pickups = state.pickups,
+            userId = state.userId,
+            rawCoNarrator = d.coNarrator,
+            canRaise = true,
+            // Resolving is Dean's. canEdit is the closest existing capability to
+            // "this session is the admin"; the SERVER is the actual gate and
+            // refuses an editor regardless of what is drawn here.
+            canResolve = capabilities.canEdit,
+            error = state.pickupError,
+            onRaise = onRaisePickup,
+            onDelete = onDeletePickup,
+            onSendChapter = onSendChapter,
+            onResolve = onResolvePickup,
+        )
     }
 
     d.notes?.let { item { Section("Notes") { Body(it) } } }
