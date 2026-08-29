@@ -16,3 +16,11 @@ local.properties.bak
 # Keystores
 *.jks
 *.keystore
+
+# Signing material. *.jks and *.keystore were already ignored above; this adds
+# the properties file some setups use for the passwords.
+#
+# THE INTENTION IS HERE; THE ENFORCEMENT IS IN ReleaseSecretsGuardTest, because
+# a .gitignore only protects files nobody has already added — `git add -f`, and
+# a file staged before the pattern existed, both walk straight past it.
+keystore.properties
