@@ -2,6 +2,7 @@ package com.dmnarration.admin.data
 
 import android.util.Log
 import com.dmnarration.admin.domain.BoardCard
+import com.dmnarration.admin.domain.CareerTotals
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
@@ -125,3 +126,31 @@ data class ProfileDto(val id: String, val role: String? = null, val display_name
 
 @Serializable
 data class SiteSettingDto(val key: String, val value: String? = null)
+
+/**
+ * career_totals_for_session()'s single row.
+ *
+ * Every field has a default so a shape change adds a zero rather than throwing
+ * — except that a zeroed total would make the partition check fail, which is
+ * the correct outcome: the screen then says nothing instead of a wrong number.
+ */
+@Serializable
+data class CareerTotalsDto(
+    val exact_words: Int = 0,
+    val exact_books: Int = 0,
+    val estimated_words: Int = 0,
+    val estimated_books: Int = 0,
+    val not_counted_books: Int = 0,
+    val not_counted_titles: List<String> = emptyList(),
+    val total_books: Int = 0,
+) {
+    fun toDomain() = CareerTotals(
+        exactWords = exact_words,
+        exactBooks = exact_books,
+        estimatedWords = estimated_words,
+        estimatedBooks = estimated_books,
+        notCountedBooks = not_counted_books,
+        notCountedTitles = not_counted_titles,
+        totalBooks = total_books,
+    )
+}

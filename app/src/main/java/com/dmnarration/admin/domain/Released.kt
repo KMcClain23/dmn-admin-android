@@ -79,3 +79,38 @@ fun reviewCountLabel(count: Int?): String? = when {
     count == 1 -> "1 review"
     else -> "$count reviews"
 }
+
+/**
+ * Words narrated across the career, in three categories.
+ *
+ * Computed by career_totals_for_session(), NOT here. The function is the one
+ * place the categories are decided; this type carries its answer. A second
+ * implementation in Kotlin would be free to filter differently from the
+ * per-book display, which is the released-count divergence again.
+ *
+ * The third category is the point. [notCountedBooks] is named on screen so the
+ * number can be acted on rather than silently lowering the total — nine of the
+ * twenty-three today are released books with no word count, and entering them
+ * would make the figure real.
+ */
+data class CareerTotals(
+    val exactWords: Int,
+    val exactBooks: Int,
+    val estimatedWords: Int,
+    val estimatedBooks: Int,
+    val notCountedBooks: Int,
+    val notCountedTitles: List<String>,
+    val totalBooks: Int,
+) {
+    /** Everything the app is willing to claim was narrated. */
+    val countedWords: Int get() = exactWords + estimatedWords
+
+    /**
+     * The categories must account for every non-archived book. The database
+     * asserts this too and refuses rather than returning a short total; this is
+     * the client refusing to DISPLAY one, so a stale build cannot show a figure
+     * the server would have rejected.
+     */
+    val partitionHolds: Boolean
+        get() = exactBooks + estimatedBooks + notCountedBooks == totalBooks
+}

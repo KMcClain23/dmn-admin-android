@@ -8,6 +8,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import com.dmnarration.admin.ui.components.Section
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.ui.unit.dp
+import com.dmnarration.admin.ui.theme.DmnTheme
+import com.dmnarration.admin.ui.theme.DmnType
+import com.dmnarration.admin.domain.CareerTotals
 import com.dmnarration.admin.ui.components.SectionTabRow
 import kotlinx.coroutines.launch
 
@@ -36,6 +43,11 @@ fun ShelfScreen(
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
+        // Above both lists: a record of completed work heading the screen that
+        // holds completed work. It is not a property of the Released list, so
+        // it sits above the tabs rather than inside one.
+        state.career?.let { CareerLine(it) }
+
         SectionTabRow(
             sections = listOf(
                 // The visible count, not the all-time one. The Released screen
@@ -57,6 +69,58 @@ fun ShelfScreen(
                     onOpenCard = onOpenCard,
                 )
             }
+        }
+    }
+}
+
+
+/**
+ * Words narrated, and what the figure does not include.
+ *
+ * THREE LINES, NOT ONE. A single total that silently omits books looks
+ * answered, and looking answered is the failure this project has found
+ * repeatedly. The third line names the count so it can be acted on: nine of the
+ * uncounted are released books with no word count, and entering them is what
+ * makes the headline real.
+ *
+ * Renders nothing at all if the partition does not hold. The database asserts
+ * it too and refuses; this is the client refusing to DISPLAY a short total, so
+ * a stale build cannot show a number the server would have rejected.
+ */
+@Composable
+private fun CareerLine(career: CareerTotals) {
+    if (!career.partitionHolds) return
+    val c = DmnTheme.colors
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text("WORDS NARRATED", style = DmnType.Label, color = c.textDim)
+        Text(
+            "%,d".format(career.countedWords),
+            style = DmnType.TitleLg,
+            color = c.textPrimary,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Text(
+            buildString {
+                append("%,d exact across %d book".format(career.exactWords, career.exactBooks))
+                if (career.exactBooks != 1) append("s")
+                if (career.estimatedBooks > 0) {
+                    append(" · %,d estimated from pages across %d book".format(
+                        career.estimatedWords, career.estimatedBooks))
+                    if (career.estimatedBooks != 1) append("s")
+                }
+            },
+            style = DmnType.Small,
+            color = c.textMuted,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (career.notCountedBooks > 0) {
+            Text(
+                "%d book%s not counted — no word count recorded".format(
+                    career.notCountedBooks, if (career.notCountedBooks == 1) "" else "s"),
+                style = DmnType.Small,
+                color = c.accentAmberDim,
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
     }
 }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.domain.ArchivedCard
 import com.dmnarration.admin.domain.Capabilities
+import com.dmnarration.admin.domain.CareerTotals
 import com.dmnarration.admin.domain.ReleasedBook
 import com.dmnarration.admin.domain.ReleasedCounts
 import com.dmnarration.admin.domain.UserRole
@@ -46,6 +47,12 @@ data class ShelfState(
     /** Set by a write, cleared by the next one. Never doubles as a load error. */
     val writeError: String? = null,
     val capabilities: Capabilities = Capabilities.of(UserRole.EDITOR),
+    /**
+     * Null until it loads, and null again if it FAILS — the screen then shows
+     * nothing rather than a total it could not confirm. A career figure that
+     * silently reads zero is worse than an absent one.
+     */
+    val career: CareerTotals? = null,
 ) {
     /**
      * True only when the read succeeded and returned nothing.
@@ -124,6 +131,14 @@ class ShelfViewModel @Inject constructor(
         // Two launches, not one: a slow or failing Archive read must not hold up
         // Released, and neither may take the other down.
         viewModelScope.launch {
+            // Loaded with Released because it belongs to the same screen. Its
+            // failure is deliberately NOT folded into releasedError: a career
+            // total that could not be read must not make the list look broken,
+            // and the list failing must not blank a total that did read.
+            board.careerTotals().fold(
+                onSuccess = { _state.value = _state.value.copy(career = it) },
+                onFailure = { _state.value = _state.value.copy(career = null) },
+            )
             board.released().fold(
                 onSuccess = { rows ->
                     _state.value = _state.value.copy(

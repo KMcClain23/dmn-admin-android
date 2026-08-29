@@ -4,6 +4,7 @@ import com.dmnarration.admin.domain.ArchivedCard
 import com.dmnarration.admin.domain.Expense
 import com.dmnarration.admin.domain.Payment
 import com.dmnarration.admin.domain.CardDetail
+import com.dmnarration.admin.domain.CareerTotals
 import com.dmnarration.admin.domain.ReleasedBook
 import com.dmnarration.admin.domain.UNARCHIVE_COLUMNS
 import kotlinx.serialization.json.JsonNull
@@ -72,6 +73,16 @@ interface BoardRepository {
 
     /** Everything archived, whatever its status. Refusal is an exception, not zero rows. */
     suspend fun archived(): Result<List<ArchivedCard>>
+
+    /**
+     * Words narrated across the career, in three categories.
+     *
+     * Its own RPC because no list covers the population: board_for_session
+     * excludes released, and released_for_session carries no words_recorded.
+     * The categories are decided in the function, so this app cannot filter
+     * differently from the figure it displays.
+     */
+    suspend fun careerTotals(): Result<CareerTotals?>
 
     /**
      * Put an archived card back, clearing all three archive fields together.
@@ -232,6 +243,17 @@ class SupabaseBoardRepository @Inject constructor(
      * sort_order, then label. Re-sorting here would be a second opinion about
      * an ordering the database already states.
      */
+    override suspend fun careerTotals(): Result<CareerTotals?> = runCatching {
+        try {
+            client.postgrest.rpc(CAREER_RPC)
+                .decodeList<CareerTotalsDto>()
+                .firstOrNull()
+                ?.toDomain()
+        } catch (t: Throwable) {
+            if (t.isCardAccessRefusal()) throw CardAccessNotEnabledException() else throw t
+        }
+    }
+
     override suspend fun payments(): Result<List<Payment>> = runCatching {
         try {
             client.postgrest.rpc(PAYMENTS_RPC)
@@ -259,6 +281,7 @@ class SupabaseBoardRepository @Inject constructor(
         const val EXPENSES_RPC = "expenses_for_session"
         const val RELEASED_RPC = "released_for_session"
         const val ARCHIVED_RPC = "archived_for_session"
+        const val CAREER_RPC = "career_totals_for_session"
 
         /** The un-archive's return shape; the reads' lists live in the RPC signatures. */
         const val ARCHIVED_COLUMNS =
