@@ -16,6 +16,12 @@ import kotlinx.datetime.LocalDate
 data class Payment(
     override val id: String,
     val cardId: String,
+    /**
+     * The book this payment is for. Null only when the card is gone — the read
+     * left-joins so a payment whose card was deleted still appears, because a
+     * money row that vanishes makes a total stop matching what can be seen.
+     */
+    val cardTitle: String?,
     val label: String,
     val kind: String,
     val period: String,
@@ -267,14 +273,36 @@ fun paymentKindLabel(kind: String): String = when (kind) {
 }
 
 /**
- * A payment's own description, for a row that often has no label at all.
+ * THE BOOK IS THE TITLE. It is what identifies a payment.
  *
- * `label` is NOT NULL but empty on several rows — His For Christmas's fee row
- * among them — so falling back to the kind is the difference between a row with
- * a name and a row with a blank space where one should be.
+ * This used to be the label, falling back to the kind — and `label` is empty on
+ * 24 of 25 rows, so the list read "Fee" all the way down with the subtitle
+ * opening "Fee ·" underneath it. The repetition was the visible symptom; the
+ * real defect was that nothing on the row said WHICH BOOK it belonged to,
+ * because payments_for_session returned card_id and no title.
+ *
+ * Same shape as Expenses, where the vendor stays as the heading and the
+ * description drops below it: the identifying fact goes on top.
+ *
+ * Falls back to the label, then the kind, only when the book is unknown — a
+ * payment whose card was deleted. Never to a blank row.
  */
 fun paymentTitle(payment: Payment): String =
-    payment.label.takeIf { it.isNotBlank() }
-        ?: paymentKindLabel(payment.kind).let { kind ->
-            payment.period.takeIf { it.isNotBlank() }?.let { "$kind · $it" } ?: kind
-        }
+    payment.cardTitle?.takeIf { it.isNotBlank() }
+        ?: payment.label.takeIf { it.isNotBlank() }
+        ?: paymentKindLabel(payment.kind)
+
+/**
+ * The category and detail, beneath the book.
+ *
+ * Where a label EXISTS it replaces the kind rather than joining it: "On
+ * delivery · received 20 Aug 2026" reads as a description of the payment, which
+ * is what it is. Where it does not, the kind carries it — and no label is
+ * invented for the 24 rows that have none, because empty is Dean's data.
+ */
+fun paymentDetail(payment: Payment): String {
+    val category = payment.label.takeIf { it.isNotBlank() }
+        ?: paymentKindLabel(payment.kind)
+    val period = payment.period.takeIf { it.isNotBlank() }
+    return listOfNotNull(category, period).joinToString(" · ")
+}

@@ -50,6 +50,7 @@ class MoneyViewModelTest {
         amountExpected = null, amountGross = null, amountReceived = received,
         dueOn = null, invoicedOn = null, receivedOn = LocalDate.parse("2026-08-20"),
         invoiceNumber = null, method = "Card", notes = null, sortOrder = 0,
+        cardTitle = "A Book",
     )
 
     private fun expense(id: String) = Expense(

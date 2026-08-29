@@ -42,6 +42,7 @@ class MoneyTest {
         method = "Card",
         notes = null,
         sortOrder = 0,
+        cardTitle = "A Book",
     )
 
     private fun expense(id: String, amount: Double, on: String = "2026-08-24") = Expense(
@@ -162,12 +163,38 @@ class MoneyTest {
 
     // ---- labels ----
 
-    @Test fun `a blank label falls back to the kind rather than a blank row`() {
-        // His For Christmas's fee row has label = "". A row with an empty name is
-        // a row that looks broken.
-        assertEquals("Fee", paymentTitle(payment("a", 1.0, label = "")))
-        assertEquals("Royalty · Q1", paymentTitle(payment("b", 1.0, kind = "royalty", period = "Q1")))
-        assertEquals("Delivery", paymentTitle(payment("c", 1.0, label = "Delivery")))
+    @Test fun `the book is the title, whatever the label says`() {
+        // REPLACES "a blank label falls back to the kind". That rule was right
+        // for a payload with no card title in it, and it produced a list
+        // reading "Fee" on every row — label is empty on 24 of 25. The book is
+        // what identifies a payment, so the book is the heading and the label
+        // is not consulted for it at all.
+        assertEquals("A Book", paymentTitle(payment("a", 1.0, label = "")))
+        assertEquals("A Book", paymentTitle(payment("b", 1.0, label = "Delivery")))
+    }
+
+    @Test fun `without a card the title falls back rather than blanking`() {
+        // A payment whose card was deleted. The read left-joins so the row
+        // survives; it must still say something.
+        val orphan = payment("c", 1.0, label = "Delivery").copy(cardTitle = null)
+        assertEquals("Delivery", paymentTitle(orphan))
+        val bare = payment("d", 1.0, label = "").copy(cardTitle = null)
+        assertEquals("Fee", paymentTitle(bare))
+    }
+
+    @Test fun `the detail line uses the label where there is one, the kind where there is not`() {
+        // The row used to say the kind here AND above, so an unlabelled row
+        // read "Fee / Fee ·". Where a label exists it REPLACES the kind:
+        // "On delivery" describes the payment, which is what this line is for.
+        assertEquals("Fee", paymentDetail(payment("a", 1.0, label = "")))
+        assertEquals("On delivery", paymentDetail(payment("b", 1.0, label = "On delivery")))
+        assertEquals("Royalty · Q1", paymentDetail(payment("c", 1.0, kind = "royalty", period = "Q1")))
+    }
+
+    @Test fun `no label is invented for a row that has none`() {
+        // Empty is Dean's data on 24 of 25 rows. The detail says the kind; it
+        // does not manufacture a description nobody wrote.
+        assertEquals("Fee", paymentDetail(payment("a", 1.0, label = "")))
     }
 
     @Test fun `an unrecognised kind renders as stored`() {

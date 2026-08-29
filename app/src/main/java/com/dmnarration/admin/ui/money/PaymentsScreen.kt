@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.dmnarration.admin.domain.OUTSTANDING_NOT_COMPUTED
 import com.dmnarration.admin.domain.Payment
 import com.dmnarration.admin.domain.paymentKindLabel
+import com.dmnarration.admin.domain.paymentDetail
 import com.dmnarration.admin.domain.paymentTitle
 import com.dmnarration.admin.domain.NO_DATE_BUCKET
 import com.dmnarration.admin.domain.receivedBreakdown
@@ -240,9 +241,13 @@ private fun PaymentRow(payment: Payment) {
  */
 private fun receivedLine(payment: Payment): String {
     val parts = buildList {
-        add(paymentKindLabel(payment.kind))
+        // The category, from paymentDetail — which uses the row's own label
+        // where it has one and the kind where it does not. Previously this
+        // always said the kind, so an unlabelled row read "Fee" here AND "Fee"
+        // above it.
+        add(paymentDetail(payment))
         add(payment.receivedOn?.let { "received ${shortDate(it)}" } ?: "no date recorded")
-        payment.method?.let { add(it) }
+        payment.method?.takeIf { it.isNotBlank() }?.let { add(it) }
     }
     return parts.joinToString(" · ")
 }

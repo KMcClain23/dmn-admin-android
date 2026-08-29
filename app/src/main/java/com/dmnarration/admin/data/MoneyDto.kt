@@ -46,6 +46,8 @@ internal fun localDate(raw: String?): LocalDate? {
 data class PaymentDto(
     val id: String,
     val card_id: String = "",
+    /** Null when the card is gone; the read left-joins so the row survives it. */
+    val card_title: String? = null,
     val label: String = "",
     val kind: String = "",
     val period: String = "",
@@ -85,6 +87,7 @@ data class ExpenseDto(
 fun PaymentDto.toDomain(): Payment = Payment(
     id = id,
     cardId = card_id,
+    cardTitle = card_title,
     label = label,
     kind = kind,
     period = period,
