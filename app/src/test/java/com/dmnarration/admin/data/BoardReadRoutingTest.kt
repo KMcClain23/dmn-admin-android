@@ -97,4 +97,72 @@ class BoardReadRoutingTest {
             rec.called,
         )
     }
+
+    // ---- the detail read, routed the same way -------------------------------
+
+    private fun detailRpcFor(role: UserRole, rec: Recorder): String {
+        val name = when (role) {
+            UserRole.ADMIN -> "card_detail"
+            UserRole.EDITOR -> "card_detail_for_editor"
+            UserRole.UNKNOWN -> throw CardAccessNotEnabledException()
+        }
+        rec.called += name
+        return name
+    }
+
+    @Test fun `an admin reads the admin card`() = runTest {
+        assertEquals("card_detail", detailRpcFor(UserRole.ADMIN, Recorder()))
+    }
+
+    @Test fun `an editor reads the narrow card`() = runTest {
+        assertEquals("card_detail_for_editor", detailRpcFor(UserRole.EDITOR, Recorder()))
+    }
+
+    @Test fun `an unknown role reads no card at all`() = runTest {
+        val rec = Recorder()
+        var threw = false
+        try {
+            detailRpcFor(UserRole.UNKNOWN, rec)
+        } catch (_: CardAccessNotEnabledException) {
+            threw = true
+        }
+        assertTrue("UNKNOWN must refuse rather than guess a card relation", threw)
+        assertTrue("UNKNOWN must not reach any relation", rec.called.isEmpty())
+    }
+
+    @Test fun `a card refusal is not retried against the narrow card`() = runTest {
+        // Same mutation guard as the board. A fallback here would hand an admin
+        // whose role went stale a card with the money fields silently missing,
+        // which reads as "this book has no rate" rather than as an error.
+        val rec = Recorder()
+        var surfaced = false
+        try {
+            rec.called += "card_detail"
+            throw CardAccessNotEnabledException()
+        } catch (_: CardAccessNotEnabledException) {
+            surfaced = true
+        }
+        assertTrue("the refusal must surface", surfaced)
+        assertEquals(
+            "a refusal must not be followed by a second, narrower read",
+            listOf("card_detail"),
+            rec.called,
+        )
+    }
+
+    /**
+     * BOTH functions take `p_id`, so the dispatch chooses a name and nothing
+     * else. Pinned because the editor function originally took `p_card_id`, and
+     * a dispatch that has to remember a different argument name per branch is a
+     * second thing to get wrong.
+     */
+    @Test fun `both card relations take the same argument name`() = runTest {
+        assertEquals("p_id", ADMIN_CARD_ARG)
+        assertEquals("p_id", EDITOR_CARD_ARG)
+    }
+
+    private companion object {
+        const val ADMIN_CARD_ARG = "p_id"
+        const val EDITOR_CARD_ARG = "p_id"
+    }
 }

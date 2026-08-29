@@ -95,7 +95,7 @@ class BoardGestureWriteTest {
         override suspend fun payoutSummary(): Result<PayoutSummary?> = Result.success(null)
         override suspend fun unarchive(cardId: String): Result<ArchivedCard?> =
             Result.success(null)
-        override suspend fun cardDetail(cardId: String) =
+        override suspend fun cardDetail(cardId: String, role: UserRole) =
             Result.success<com.dmnarration.admin.domain.CardDetail?>(null)
     }
 

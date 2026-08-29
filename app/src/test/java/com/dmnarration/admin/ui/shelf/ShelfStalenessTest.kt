@@ -59,7 +59,7 @@ class ShelfStalenessTest {
         override suspend fun loadBoard(role: UserRole): Result<List<BoardCard>> = Result.success(emptyList())
         override suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?> =
             Result.success(null)
-        override suspend fun cardDetail(cardId: String): Result<CardDetail?> = Result.success(null)
+        override suspend fun cardDetail(cardId: String, role: UserRole): Result<CardDetail?> = Result.success(null)
         override suspend fun released(): Result<List<ReleasedBook>> = Result.success(emptyList())
         override suspend fun archived(): Result<List<ArchivedCard>> {
             archivedReads++

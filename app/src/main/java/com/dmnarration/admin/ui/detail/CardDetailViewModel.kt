@@ -55,7 +55,11 @@ class CardDetailViewModel @Inject constructor(
 
     private var loadedId: String? = null
 
+    /** Held so a refresh routes the same way the first load did. */
+    private var role: UserRole = UserRole.UNKNOWN
+
     fun start(cardId: String, role: UserRole) {
+        this.role = role
         _state.value = _state.value.copy(capabilities = Capabilities.of(role))
         if (loadedId == cardId) return
         loadedId = cardId
@@ -152,7 +156,7 @@ class CardDetailViewModel @Inject constructor(
                 refreshing = !initial,
                 error = null,
             )
-            board.cardDetail(cardId)
+            board.cardDetail(cardId, role)
                 .onSuccess { detail ->
                     _state.value = _state.value.copy(
                         loading = false,

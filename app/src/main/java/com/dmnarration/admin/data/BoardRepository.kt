@@ -79,7 +79,17 @@ interface BoardRepository {
      * otherwise all arrive as the same empty answer — the ambiguity Stage 2's bug 5
      * was made of.
      */
-    suspend fun cardDetail(cardId: String): Result<CardDetail?>
+    /**
+     * The role is PASSED IN, for the same reasons as [loadBoard]: the dispatch
+     * is a hint, never the boundary. A stale ADMIN calls card_detail() and the
+     * SERVER refuses; a stale EDITOR calls card_detail_for_editor() and gets a
+     * card without the money fields. UNKNOWN calls nothing.
+     *
+     * Both functions take `p_id`, so the dispatch chooses a NAME and nothing
+     * else — a dispatch that also had to remember a different argument name
+     * would be a second thing to get wrong.
+     */
+    suspend fun cardDetail(cardId: String, role: UserRole): Result<CardDetail?>
 
     /**
      * Every released book, archived ones included.
@@ -222,9 +232,16 @@ class SupabaseBoardRepository @Inject constructor(
                 ?.toDomain()
         }
 
-    override suspend fun cardDetail(cardId: String): Result<CardDetail?> = runCatching {
+    override suspend fun cardDetail(cardId: String, role: UserRole): Result<CardDetail?> = runCatching {
+        // Fail closed, and deliberately NOT a fallback to the editor read: a
+        // fallback would turn a routing bug into a quietly narrower card.
+        val rpc = when (role) {
+            UserRole.ADMIN -> CARD_RPC
+            UserRole.EDITOR -> CARD_EDITOR_RPC
+            UserRole.UNKNOWN -> throw CardAccessNotEnabledException()
+        }
         try {
-            client.postgrest.rpc(CARD_RPC, buildJsonObject { put("p_id", cardId) })
+            client.postgrest.rpc(rpc, buildJsonObject { put("p_id", cardId) })
                 .decodeList<CardDetailDto>()
                 .firstOrNull()
                 ?.toDomain()
@@ -343,6 +360,15 @@ class SupabaseBoardRepository @Inject constructor(
          */
         const val BOARD_EDITOR_RPC = "board_for_editor"
         const val CARD_RPC = "card_detail"
+
+        /**
+         * The editor's card. A strict SUBSET of card_detail()'s columns —
+         * pfh_rate, payment_type, narrator_share_percent, royalty_split_percent,
+         * production_type, production_company and notes are absent from its
+         * return type, so they cannot arrive at all. CardDetailDto defaults them
+         * to null, which is why the same DTO decodes both.
+         */
+        const val CARD_EDITOR_RPC = "card_detail_for_editor"
         const val PAYMENTS_RPC = "payments_for_session"
         const val PAYOUTS_RPC = "payouts_for_session"
         const val PAYOUT_SUMMARY_RPC = "payout_summary_for_session"
