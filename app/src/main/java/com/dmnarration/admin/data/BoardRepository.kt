@@ -9,11 +9,16 @@ import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.CareerTotals
 import com.dmnarration.admin.domain.ReleasedBook
 import com.dmnarration.admin.domain.UNARCHIVE_COLUMNS
+import io.github.jan.supabase.functions.functions
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.Pickup
+import com.dmnarration.admin.domain.Narrator
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import com.dmnarration.admin.domain.PickupKind
 import com.dmnarration.admin.domain.PickupStatus
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -131,23 +136,30 @@ interface BoardRepository {
      */
     suspend fun setEditingProgress(cardId: String, chaptersEdited: Int?, chaptersTotal: Int?): Result<Unit>
     suspend fun setEditingComplete(cardId: String, complete: Boolean): Result<Unit>
+    /** Narrators an editor may assign to. Name and id only; no email. */
+    suspend fun narrators(): Result<List<Narrator>>
+
     suspend fun createPickup(
         cardId: String, chapter: String, timestampAt: String, kind: PickupKind,
-        said: String, shouldBe: String, note: String, assignedTo: String,
+        said: String, shouldBe: String, note: String, assignedNarratorId: String?,
     ): Result<String>
 
     suspend fun updateOwnDraftPickup(
         id: String, chapter: String, timestampAt: String, kind: PickupKind,
-        said: String, shouldBe: String, note: String, assignedTo: String,
+        said: String, shouldBe: String, note: String, assignedNarratorId: String?,
     ): Result<Unit>
 
     suspend fun deleteOwnDraftPickup(id: String): Result<Unit>
 
     /**
-     * draft -> sent for one chapter, and the seam E3 hangs the email on.
-     * NOTHING is emailed here; the transition is the whole of this stage.
+     * Send a chapter's pickups: email each narrator, THEN mark them sent.
+     *
+     * Calls the send-pickups Edge Function rather than the RPC directly. The
+     * ordering guarantee lives there — a failed email must leave everything
+     * DRAFT — and calling send_chapter_pickups from here would skip the email
+     * entirely while still marking the work done.
      */
-    suspend fun sendChapterPickups(cardId: String, chapter: String): Result<Int>
+    suspend fun sendChapterPickups(cardId: String, chapter: String): Result<SendPickupsResult>
 
     /** ADMIN ONLY. Gated by assert_board_access; an editor is refused. */
     suspend fun resolvePickup(id: String, status: PickupStatus): Result<Unit>
@@ -351,16 +363,27 @@ class SupabaseBoardRepository @Inject constructor(
             put("p_complete", complete)
         }
 
+    override suspend fun narrators(): Result<List<Narrator>> = runCatching {
+        try {
+            client.postgrest.rpc("narrators_for_editor")
+                .decodeList<NarratorDto>().map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
     override suspend fun createPickup(
         cardId: String, chapter: String, timestampAt: String, kind: PickupKind,
-        said: String, shouldBe: String, note: String, assignedTo: String,
+        said: String, shouldBe: String, note: String, assignedNarratorId: String?,
     ): Result<String> = runCatching {
         try {
             client.postgrest.rpc("create_pickup", buildJsonObject {
                 put("p_card_id", cardId); put("p_chapter", chapter)
                 put("p_timestamp_at", timestampAt); put("p_kind", kind.stored)
                 put("p_said", said); put("p_should_be", shouldBe)
-                put("p_note", note); put("p_assigned_to", assignedTo)
+                put("p_note", note)
+                if (assignedNarratorId == null) put("p_assigned_narrator_id", JsonNull)
+                else put("p_assigned_narrator_id", assignedNarratorId)
             }).decodeAs<String>()
         } catch (t: Throwable) {
             if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
@@ -369,27 +392,39 @@ class SupabaseBoardRepository @Inject constructor(
 
     override suspend fun updateOwnDraftPickup(
         id: String, chapter: String, timestampAt: String, kind: PickupKind,
-        said: String, shouldBe: String, note: String, assignedTo: String,
+        said: String, shouldBe: String, note: String, assignedNarratorId: String?,
     ): Result<Unit> = rpcUnit("update_own_draft_pickup") {
         put("p_id", id); put("p_chapter", chapter)
         put("p_timestamp_at", timestampAt); put("p_kind", kind.stored)
         put("p_said", said); put("p_should_be", shouldBe)
-        put("p_note", note); put("p_assigned_to", assignedTo)
+        put("p_note", note)
+        if (assignedNarratorId == null) put("p_assigned_narrator_id", JsonNull)
+        else put("p_assigned_narrator_id", assignedNarratorId)
     }
 
     override suspend fun deleteOwnDraftPickup(id: String): Result<Unit> =
         rpcUnit("delete_own_draft_pickup") { put("p_id", id) }
 
-    override suspend fun sendChapterPickups(cardId: String, chapter: String): Result<Int> =
-        runCatching {
-            try {
-                client.postgrest.rpc("send_chapter_pickups", buildJsonObject {
-                    put("p_card_id", cardId); put("p_chapter", chapter)
-                }).decodeAs<Int>()
-            } catch (t: Throwable) {
-                if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
-            }
+    override suspend fun sendChapterPickups(
+        cardId: String,
+        chapter: String,
+    ): Result<SendPickupsResult> = runCatching {
+        val res = client.functions.invoke("send-pickups") {
+            setBody(buildJsonObject { put("cardId", cardId); put("chapter", chapter) })
         }
+        val body = res.bodyAsText()
+        val parsed = runCatching {
+            Json { ignoreUnknownKeys = true }.decodeFromString<SendPickupsResult>(body)
+        }.getOrNull()
+
+        // 207 is a PARTIAL success and is NOT an error: some narrators were
+        // emailed and some were not, and the caller needs the detail either way.
+        // Treating it as a failure would hide the ones that did go out.
+        if (res.status.value !in listOf(200, 207)) {
+            throw IllegalStateException(parsed?.error ?: "Sending failed (${res.status.value}).")
+        }
+        parsed ?: throw IllegalStateException("The send endpoint returned something unreadable.")
+    }
 
     override suspend fun resolvePickup(id: String, status: PickupStatus): Result<Unit> =
         rpcUnit("resolve_pickup") {

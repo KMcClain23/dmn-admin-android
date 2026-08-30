@@ -9,6 +9,7 @@ import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.Capabilities
 import com.dmnarration.admin.domain.FieldWrite
 import com.dmnarration.admin.domain.Pickup
+import com.dmnarration.admin.domain.Narrator
 import com.dmnarration.admin.domain.PickupKind
 import com.dmnarration.admin.domain.PickupStatus
 import com.dmnarration.admin.domain.UserRole
@@ -44,6 +45,16 @@ data class CardDetailUiState(
     val userId: String? = null,
     /** A pickup write that failed. Separate from `error`, which is the card read. */
     val pickupError: String? = null,
+    /** Narrators an editor may assign to. Id and name only; no email. */
+    val narrators: List<Narrator> = emptyList(),
+    /**
+     * What the last send reported.
+     *
+     * Held rather than shown as a transient toast because it carries the SKIPPED
+     * list: a narrator with no email on file is reported, never silently
+     * dropped, and that is the one thing the sender most needs to be told.
+     */
+    val sendReport: String? = null,
     /**
      * Per-COLUMN write state. One card has two dozen editable fields and two of
      * them can be in flight at once; a single saving/error pair on the screen
@@ -200,6 +211,7 @@ class CardDetailViewModel @Inject constructor(
             board.cardDetail(cardId, role)
                 .onSuccess { detail ->
                     launch { loadPickups() }
+                    launch { loadNarrators() }
                     _state.value = _state.value.copy(
                         loading = false,
                         refreshing = false,
@@ -271,25 +283,68 @@ class CardDetailViewModel @Inject constructor(
 
     fun raisePickup(
         chapter: String, timestampAt: String, kind: PickupKind,
-        said: String, shouldBe: String, note: String, assignedTo: String,
+        said: String, shouldBe: String, note: String, assignedNarratorId: String?,
     ) = write {
         board.createPickup(
-            requireNotNull(loadedId), chapter, timestampAt, kind, said, shouldBe, note, assignedTo,
+            requireNotNull(loadedId), chapter, timestampAt, kind, said, shouldBe, note,
+            assignedNarratorId,
         ).map { }
     }
 
     fun editPickup(
         id: String, chapter: String, timestampAt: String, kind: PickupKind,
-        said: String, shouldBe: String, note: String, assignedTo: String,
+        said: String, shouldBe: String, note: String, assignedNarratorId: String?,
     ) = write {
-        board.updateOwnDraftPickup(id, chapter, timestampAt, kind, said, shouldBe, note, assignedTo)
+        board.updateOwnDraftPickup(
+            id, chapter, timestampAt, kind, said, shouldBe, note, assignedNarratorId,
+        )
     }
 
     fun deletePickup(id: String) = write { board.deleteOwnDraftPickup(id) }
 
-    /** draft -> sent for one chapter. No email in this stage; E3 hangs it here. */
-    fun sendChapter(chapter: String) = write {
-        board.sendChapterPickups(requireNotNull(loadedId), chapter).map { }
+    /**
+     * Email the chapter's pickups, then mark them sent.
+     *
+     * The report is surfaced rather than reduced to success/failure, because a
+     * partial send is the normal case: some narrators have an address on file and
+     * some do not, and "sent" alone would hide which.
+     */
+    fun sendChapter(chapter: String) {
+        val cardId = loadedId ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(pickupError = null, sendReport = null)
+            board.sendChapterPickups(cardId, chapter)
+                .onSuccess { r ->
+                    val parts = buildList {
+                        if (r.emailed.isNotEmpty()) {
+                            add("Emailed " + r.emailed.joinToString(", ") { "${it.narrator} (${it.count})" })
+                        }
+                        if (r.skipped.isNotEmpty()) {
+                            add("NOT sent — " + r.skipped.joinToString(", ") {
+                                "${it.narrator}: ${it.reason ?: "skipped"}"
+                            })
+                        }
+                        if (r.failed.isNotEmpty()) {
+                            add("Failed — " + r.failed.joinToString(", ") { it.narrator })
+                        }
+                        val unfiled = r.manifests.count { it.error != null }
+                        if (unfiled > 0) {
+                            // The email is the delivery and the manifest is the
+                            // record: this is worth saying and is not a failure.
+                            add("$unfiled manifest(s) not filed; the emails went out.")
+                        }
+                    }
+                    _state.value = _state.value.copy(
+                        sendReport = parts.joinToString(" · ").ifBlank { "Nothing to send." },
+                    )
+                    load(cardId, initial = false)
+                }
+                .onFailure { t ->
+                    _state.value = _state.value.copy(
+                        pickupError = t.message ?: "Sending failed.",
+                    )
+                }
+        }
     }
 
     fun resolvePickup(id: String, status: PickupStatus) = write {
@@ -314,6 +369,14 @@ class CardDetailViewModel @Inject constructor(
                     )
                 }
         }
+    }
+
+    private suspend fun loadNarrators() {
+        board.narrators()
+            .onSuccess { _state.value = _state.value.copy(narrators = it) }
+            // A failed narrator read leaves the picker empty, which is visible.
+            // It must not blank the card.
+            .onFailure { }
     }
 
     private suspend fun loadPickups() {

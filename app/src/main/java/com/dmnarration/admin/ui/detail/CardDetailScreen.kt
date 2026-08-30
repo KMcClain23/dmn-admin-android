@@ -69,7 +69,7 @@ fun CardDetailScreen(
     onEditField: (String) -> Unit,
     onSetProgress: (Int?, Int?) -> Unit,
     onMarkComplete: (Boolean) -> Unit,
-    onRaisePickup: (String, String, PickupKind, String, String, String, String) -> Unit,
+    onRaisePickup: (String, String, PickupKind, String, String, String, String?) -> Unit,
     onDeletePickup: (String) -> Unit,
     onSendChapter: (String) -> Unit,
     onResolvePickup: (String, PickupStatus) -> Unit,
@@ -144,7 +144,7 @@ private fun LazyListScope.detailBody(
     onEditField: (String) -> Unit,
     onSetProgress: (Int?, Int?) -> Unit,
     onMarkComplete: (Boolean) -> Unit,
-    onRaisePickup: (String, String, PickupKind, String, String, String, String) -> Unit,
+    onRaisePickup: (String, String, PickupKind, String, String, String, String?) -> Unit,
     onDeletePickup: (String) -> Unit,
     onSendChapter: (String) -> Unit,
     onResolvePickup: (String, PickupStatus) -> Unit,
@@ -215,13 +215,14 @@ private fun LazyListScope.detailBody(
         PickupsSection(
             pickups = state.pickups,
             userId = state.userId,
-            rawCoNarrator = d.coNarrator,
+            narrators = state.narrators,
             canRaise = true,
             // Resolving is Dean's. canEdit is the closest existing capability to
             // "this session is the admin"; the SERVER is the actual gate and
             // refuses an editor regardless of what is drawn here.
             canResolve = capabilities.canEdit,
             error = state.pickupError,
+            report = state.sendReport,
             onRaise = onRaisePickup,
             onDelete = onDeletePickup,
             onSendChapter = onSendChapter,

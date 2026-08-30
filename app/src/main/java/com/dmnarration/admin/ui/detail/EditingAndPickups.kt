@@ -23,7 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import com.dmnarration.admin.domain.CardDetail
+import com.dmnarration.admin.domain.Narrator
 import com.dmnarration.admin.domain.EditingState
 import com.dmnarration.admin.domain.Pickup
 import com.dmnarration.admin.domain.PickupKind
@@ -147,28 +150,6 @@ fun EditingSection(
     }
 }
 
-/**
- * Narrator names to offer: the card's co-narrators, plus Dean.
- *
- * co_narrator is stored in two shapes — a JSON array in most rows, a bare name
- * in a few — so both are handled. This mirrors parseCoNarrators on the web and
- * is duplicated rather than shared, because the two codebases share no code and
- * the cost of being wrong here is an empty picker rather than a wrong name.
- */
-internal fun narratorOptions(rawCoNarrator: String?): List<String> {
-    val raw = rawCoNarrator?.trim().orEmpty()
-    val names = when {
-        raw.isEmpty() -> emptyList()
-        raw.startsWith("[") ->
-            raw.removePrefix("[").removeSuffix("]")
-                .split(',')
-                .map { it.trim().trim('"') }
-                .filter { it.isNotBlank() }
-        else -> listOf(raw)
-    }
-    return (names + "Dean").distinct()
-}
-
 /** Chapters sort numerically where they are numbers, alphabetically otherwise. */
 private val chapterOrder = Comparator<String> { a, b ->
     val na = a.trim().toIntOrNull()
@@ -193,15 +174,18 @@ private val chapterOrder = Comparator<String> { a, b ->
  * SEND IS PER CHAPTER, matching send_chapter_pickups. Nothing is emailed here:
  * that transition is the seam E3 hangs the email on.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PickupsSection(
     pickups: List<Pickup>,
     userId: String?,
-    rawCoNarrator: String?,
+    narrators: List<Narrator>,
     canRaise: Boolean,
     canResolve: Boolean,
     error: String?,
-    onRaise: (String, String, PickupKind, String, String, String, String) -> Unit,
+    /** What the last send reported, including narrators it could NOT reach. */
+    report: String?,
+    onRaise: (String, String, PickupKind, String, String, String, String?) -> Unit,
     onDelete: (String) -> Unit,
     onSendChapter: (String) -> Unit,
     onResolve: (String, PickupStatus) -> Unit,
@@ -212,7 +196,8 @@ fun PickupsSection(
     var said by remember { mutableStateOf("") }
     var shouldBe by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    var assigned by remember { mutableStateOf("") }
+    // The narrator ID, not a name: create_pickup takes a real reference now.
+    var assignedId by remember { mutableStateOf<String?>(null) }
     var raising by remember { mutableStateOf(false) }
 
     Column {
@@ -244,7 +229,7 @@ fun PickupsSection(
                     val head = listOfNotNull(
                         p.timestampAt.takeIf { it.isNotBlank() },
                         p.kind.label,
-                        p.assignedTo.takeIf { it.isNotBlank() }?.let { "for $it" },
+                        p.assignedNarratorName?.takeIf { it.isNotBlank() }?.let { "for $it" },
                     ).joinToString(" · ")
                     Text(head, style = DmnType.Small, color = DmnTheme.colors.textFaint)
                     Text(p.summary, style = DmnType.Body, color = DmnTheme.colors.textPrimary)
@@ -319,18 +304,21 @@ fun PickupsSection(
                     }
                     field(note, { note = it }, "Note", modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
 
-                    val options = narratorOptions(rawCoNarrator)
-                    if (options.isNotEmpty()) {
-                        Row(
+                    // Sourced from narrators_for_editor(), which returns id and
+                    // name and NOT email — the narrators table is admin-only.
+                    if (narrators.isNotEmpty()) {
+                        FlowRow(
                             Modifier.padding(top = 6.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            for (name in options) {
-                                TextButton(onClick = { assigned = if (assigned == name) "" else name }) {
+                            for (n in narrators) {
+                                TextButton(onClick = {
+                                    assignedId = if (assignedId == n.id) null else n.id
+                                }) {
                                     Text(
-                                        name,
+                                        n.displayName,
                                         style = DmnType.Small,
-                                        color = if (assigned == name) {
+                                        color = if (assignedId == n.id) {
                                             DmnTheme.colors.accentAmber
                                         } else {
                                             DmnTheme.colors.textFaint
@@ -348,7 +336,7 @@ fun PickupsSection(
                             enabled = chapter.isNotBlank() &&
                                 (!kind.needsSaidPair || (said.isNotBlank() && shouldBe.isNotBlank())),
                             onClick = {
-                                onRaise(chapter, timestampAt, kind, said, shouldBe, note, assigned)
+                                onRaise(chapter, timestampAt, kind, said, shouldBe, note, assignedId)
                                 timestampAt = ""
                                 said = ""
                                 shouldBe = ""
@@ -372,6 +360,16 @@ fun PickupsSection(
                 it,
                 style = DmnType.Small,
                 color = DmnTheme.colors.alertRed,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        // Not an error: a send that reached some narrators and not others is the
+        // normal case, and saying only "sent" would hide the ones it missed.
+        report?.let {
+            Text(
+                it,
+                style = DmnType.Small,
+                color = DmnTheme.colors.textBody,
                 modifier = Modifier.padding(top = 6.dp),
             )
         }

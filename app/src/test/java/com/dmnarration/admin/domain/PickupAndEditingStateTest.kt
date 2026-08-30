@@ -1,6 +1,5 @@
 package com.dmnarration.admin.domain
 
-import com.dmnarration.admin.ui.detail.narratorOptions
 import kotlinx.datetime.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,7 +53,8 @@ class PickupAndEditingStateTest {
     ) = Pickup(
         id = "p1", cardId = "c1", chapter = "12", timestampAt = "04:32.1",
         kind = kind, said = said, shouldBe = shouldBe, note = note,
-        assignedTo = "", status = status, createdBy = createdBy,
+        assignedNarratorId = null, assignedNarratorName = null,
+        status = status, createdBy = createdBy,
         createdAt = t, sentAt = null, resolvedAt = null, resolvedBy = null,
     )
 
@@ -109,13 +109,14 @@ class PickupAndEditingStateTest {
         assertEquals("Noise", pickup("e", kind = PickupKind.NOISE).summary)
     }
 
-    @Test fun `the narrator picker handles both co_narrator shapes and always offers Dean`() {
-        // The column holds a JSON array in most rows and a bare name in a few.
-        assertEquals(listOf("Veronica Moore", "Dean"), narratorOptions("[\"Veronica Moore\"]"))
-        assertEquals(listOf("Ann Dahlia", "Dean"), narratorOptions("Ann Dahlia"))
-        assertEquals(listOf("Dean"), narratorOptions(null))
-        assertEquals(listOf("Dean"), narratorOptions(""))
-        // Dean is not duplicated when he is already a co-narrator on the card.
-        assertEquals(listOf("Dean"), narratorOptions("[\"Dean\"]"))
+    @Test fun `an unassigned pickup is distinguishable from an unreachable one`() {
+        // Null narrator means nobody was assigned. That is NOT the same as a
+        // narrator with no email on file, which the sender skips and REPORTS —
+        // conflating the two would hide one of them.
+        assertFalse(pickup("e").isAssigned)
+        assertTrue(
+            pickup("e").copy(assignedNarratorId = "n1", assignedNarratorName = "Veronica Moore")
+                .isAssigned,
+        )
     }
 }

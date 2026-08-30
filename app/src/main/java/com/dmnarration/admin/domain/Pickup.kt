@@ -9,9 +9,9 @@ import kotlinx.datetime.Instant
  * features depend on it: pickups are batched and sent per chapter, and E3 names
  * the email subject from it. A value two features read is not a substring.
  *
- * `assignedTo` is a narrator NAME, as free text, mirroring the column. The 18
- * co-narrators exist as names and not as users, so there is nothing to
- * reference; E6 turns this into a real reference.
+ * `assignedNarratorId` is a REAL reference to narrators(id) since E3. It was
+ * free text through E2, when the narrators table did not exist; the conversion
+ * was done while the table was empty, which made it free.
  */
 data class Pickup(
     override val id: String,
@@ -24,7 +24,9 @@ data class Pickup(
     val said: String,
     val shouldBe: String,
     val note: String,
-    val assignedTo: String,
+    val assignedNarratorId: String?,
+    /** Denormalised for display; the read functions join it so the client needs no lookup. */
+    val assignedNarratorName: String?,
     val status: PickupStatus,
     val createdBy: String?,
     val createdAt: Instant?,
@@ -46,6 +48,9 @@ data class Pickup(
      */
     fun isEditableBy(userId: String?): Boolean =
         isDraft && userId != null && createdBy == userId
+
+    /** Null id means nobody is assigned — which is not the same as unreachable. */
+    val isAssigned: Boolean get() = assignedNarratorId != null
 
     /** One line for a list, in the order a person reads it. */
     val summary: String

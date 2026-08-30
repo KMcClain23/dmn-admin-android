@@ -10,6 +10,7 @@ import dagger.hilt.components.SingletonComponent
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.postgrest.Postgrest
 import javax.inject.Singleton
 import kotlin.time.Duration.Companion.seconds
@@ -50,6 +51,7 @@ object SupabaseModule {
                 autoLoadFromStorage = true
             }
             install(Postgrest)
+            install(Functions)
         }
     }
 
