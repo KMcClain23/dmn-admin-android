@@ -76,6 +76,17 @@ interface BoardRepository {
     suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?>
 
     /**
+     * The four financial columns, which no longer have a direct write path.
+     *
+     * `authenticated` had its UPDATE grant on pfh_rate, payment_type,
+     * narrator_share_percent and royalty_split_percent revoked, because RLS
+     * alone was the single layer protecting them — a non-admin attempt was
+     * filtered to zero rows rather than refused, which looked like success.
+     * set_card_financial is admin-gated and names the four columns statically.
+     */
+    suspend fun setCardFinancial(cardId: String, column: String, value: String): Result<Unit>
+
+    /**
      * One card in full. Null means the id matched nothing.
      *
      * A refusal is [CardAccessNotEnabledException], never null, because a card that
@@ -262,6 +273,16 @@ class SupabaseBoardRepository @Inject constructor(
      *
      * Nothing here sets updated_at or released_at. Those are triggers now.
      */
+    override suspend fun setCardFinancial(
+        cardId: String,
+        column: String,
+        value: String,
+    ): Result<Unit> = rpcUnit("set_card_financial") {
+        put("p_card_id", cardId)
+        put("p_column", column)
+        put("p_value", value)
+    }
+
     override suspend fun updateCard(cardId: String, patch: JsonObject): Result<BoardCard?> =
         runCatching {
             client.from("board_cards")

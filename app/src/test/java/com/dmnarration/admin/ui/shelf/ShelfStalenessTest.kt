@@ -67,6 +67,7 @@ class ShelfStalenessTest {
 
         // E2 write path. These fakes exist to test the board/shelf/money joins,
         // not the editor's writes, so they accept and record nothing.
+        override suspend fun setCardFinancial(cardId: String, column: String, value: String): Result<Unit> = Result.success(Unit)
         override suspend fun pickups(role: UserRole): Result<List<Pickup>> = Result.success(emptyList())
         override suspend fun setEditingProgress(cardId: String, chaptersEdited: Int?, chaptersTotal: Int?): Result<Unit> = Result.success(Unit)
         override suspend fun setEditingComplete(cardId: String, complete: Boolean): Result<Unit> = Result.success(Unit)

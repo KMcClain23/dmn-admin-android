@@ -104,6 +104,35 @@ class CardDetailViewModel @Inject constructor(
         setWrite(column, FieldWrite.Saving(raw))
 
         viewModelScope.launch {
+            // THE FOUR FINANCIAL COLUMNS HAVE NO DIRECT WRITE PATH. Their UPDATE
+            // grant was revoked from `authenticated`, so a patch naming one of
+            // them now fails with permission denied rather than saving. They go
+            // through the admin-gated definer function instead; every other
+            // column keeps the direct path deliberately.
+            if (column in FINANCIAL_COLUMNS) {
+                board.setCardFinancial(cardId, column, raw.trim()).fold(
+                    onSuccess = {
+                        setWrite(column, FieldWrite.Saved(raw.trim()))
+                        // The function returns nothing, so the screen learns what
+                        // was actually stored by re-reading — including anything a
+                        // trigger changed.
+                        load(cardId, initial = false)
+                    },
+                    onFailure = { t ->
+                        val fromServer = serverRefusalMessage(t)
+                        Log.w(TAG, "financial field write failed: $column", t)
+                        setWrite(
+                            column,
+                            FieldWrite.Failed(
+                                message = fromServer ?: describeWriteFailure(t),
+                                fromServer = fromServer != null,
+                            ),
+                        )
+                    },
+                )
+                return@launch
+            }
+
             val patch = buildJsonObject {
                 val trimmed = raw.trim()
                 if (trimmed.isEmpty()) put(column, JsonNull) else put(column, JsonPrimitive(trimmed))
@@ -212,6 +241,16 @@ class CardDetailViewModel @Inject constructor(
     }
 
     private companion object {
+        /**
+         * The columns with no direct write path. Listed here rather than
+         * inferred from the field's group, because the GRANT is what decides
+         * this and the grant names these four — a Money-group field that is not
+         * one of them would still write directly.
+         */
+        val FINANCIAL_COLUMNS = setOf(
+            "pfh_rate", "payment_type", "narrator_share_percent", "royalty_split_percent",
+        )
+
         const val TAG = "CardDetailViewModel"
     }
 
