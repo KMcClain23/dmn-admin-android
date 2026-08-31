@@ -67,6 +67,15 @@ fun SettingsScreen(
     onSave: (String, String) -> Unit,
     onEdited: (String) -> Unit,
     onBack: (() -> Unit)? = null,
+    /**
+     * Sign out lives here TOO, not instead.
+     *
+     * It was only in the board's overflow menu, so signing out meant navigating
+     * back to one particular screen first and then finding a menu. Settings is
+     * where anyone looks for it. The board entry stays — removing a control
+     * people already know is its own small betrayal.
+     */
+    onSignOut: (() -> Unit)? = null,
 ) {
     val c = DmnTheme.colors
 
@@ -124,6 +133,17 @@ fun SettingsScreen(
                     return@list
                 }
                 body(settings, state, onSave, onEdited)
+
+                if (onSignOut != null) {
+                    item {
+                        TextButton(
+                            onClick = onSignOut,
+                            modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 32.dp),
+                        ) {
+                            Text("Sign out", style = DmnType.Body, color = c.alertRed)
+                        }
+                    }
+                }
             },
         )
     }

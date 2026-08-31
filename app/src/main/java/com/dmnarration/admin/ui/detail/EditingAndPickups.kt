@@ -14,6 +14,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import com.dmnarration.admin.domain.CardDetail
-import com.dmnarration.admin.domain.Narrator
+import com.dmnarration.admin.domain.CastMember
 import com.dmnarration.admin.domain.EditingState
 import com.dmnarration.admin.domain.Pickup
 import com.dmnarration.admin.domain.PickupKind
@@ -179,9 +181,11 @@ private val chapterOrder = Comparator<String> { a, b ->
 fun PickupsSection(
     pickups: List<Pickup>,
     userId: String?,
-    narrators: List<Narrator>,
+    cast: List<CastMember>,
+    castError: String?,
     canRaise: Boolean,
     canResolve: Boolean,
+    canDelete: Boolean,
     error: String?,
     /** What the last send reported, including narrators it could NOT reach. */
     report: String?,
@@ -189,6 +193,8 @@ fun PickupsSection(
     onDelete: (String) -> Unit,
     onSendChapter: (String) -> Unit,
     onResolve: (String, PickupStatus) -> Unit,
+    onMarkReturned: (String) -> Unit,
+    onAdminDelete: (String) -> Unit,
 ) {
     var chapter by remember { mutableStateOf("") }
     var timestampAt by remember { mutableStateOf("") }
@@ -198,6 +204,37 @@ fun PickupsSection(
     var note by remember { mutableStateOf("") }
     // The narrator ID, not a name: create_pickup takes a real reference now.
     var assignedId by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf<String?>(null) }
+
+    // A solo book has one possible answer, so it is filled in rather than asked.
+    // A two-hander defaults to the CO-NARRATOR: a pickup is usually about the
+    // other person's read, and correcting it is one tap.
+    confirmDelete?.let { id ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("Remove this pickup?") },
+            text = {
+                Text(
+                    "This cannot be undone. To close it and keep the record, use Dismiss.",
+                    style = DmnType.Small,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onAdminDelete(id); confirmDelete = null }) {
+                    Text("Remove", color = DmnTheme.colors.alertRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    LaunchedEffect(cast) {
+        if (assignedId == null && cast.isNotEmpty()) {
+            assignedId = (cast.firstOrNull { !it.isOwner } ?: cast.first()).narratorId
+        }
+    }
     var raising by remember { mutableStateOf(false) }
 
     Column {
@@ -246,12 +283,47 @@ fun PickupsSection(
                                 Text("Delete", style = DmnType.Small, color = DmnTheme.colors.accentAmber)
                             }
                         }
-                        if (canResolve && p.status == PickupStatus.SENT) {
-                            TextButton(onClick = { onResolve(p.id, PickupStatus.RESOLVED) }) {
-                                Text("Resolve", style = DmnType.Small, color = DmnTheme.colors.accentAmber)
+                        // AN UNKNOWN STATUS OFFERS NOTHING. This build cannot
+                        // know which transitions the server accepts from a state
+                        // it has never heard of, and guessing is what produced a
+                        // Resolve button that only worked where the label lied.
+                        if (!p.status.isKnown) {
+                            Text(
+                                p.status.label,
+                                style = DmnType.Small,
+                                color = DmnTheme.colors.textFaint,
+                            )
+                        }
+
+                        // SENT is out with the narrator. Resolve from sent is
+                        // refused by the server since P1, so that button could
+                        // only ever produce an error — "Re-recorded" is the
+                        // transition that actually exists.
+                        if (p.status == PickupStatus.SENT) {
+                            TextButton(onClick = { onMarkReturned(p.id) }) {
+                                Text("Re-recorded", style = DmnType.Small, color = DmnTheme.colors.accentAmber)
                             }
+                        }
+
+                        if (canResolve && p.status == PickupStatus.RETURNED) {
+                            TextButton(onClick = { onResolve(p.id, PickupStatus.RESOLVED) }) {
+                                Text("Verify & close", style = DmnType.Small, color = DmnTheme.colors.accentAmber)
+                            }
+                        }
+                        if (canResolve &&
+                            (p.status == PickupStatus.SENT || p.status == PickupStatus.RETURNED)
+                        ) {
                             TextButton(onClick = { onResolve(p.id, PickupStatus.DISMISSED) }) {
                                 Text("Dismiss", style = DmnType.Small, color = DmnTheme.colors.accentAmber)
+                            }
+                        }
+                        // REMOVE, and deliberately not Dismiss. Dismiss closes
+                        // something real and keeps the history true; this is for
+                        // rows that should never have existed. Irreversible, so
+                        // it confirms, and it is the quietest control on the row.
+                        if (canDelete) {
+                            TextButton(onClick = { confirmDelete = p.id }) {
+                                Text("Remove", style = DmnType.Small, color = DmnTheme.colors.textFaint)
                             }
                         }
                     }
@@ -304,21 +376,43 @@ fun PickupsSection(
                     }
                     field(note, { note = it }, "Note", modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
 
-                    // Sourced from narrators_for_editor(), which returns id and
-                    // name and NOT email — the narrators table is admin-only.
-                    if (narrators.isNotEmpty()) {
+                    // WHOSE READ — sized to THIS BOOK's cast, never the roster.
+                    //
+                    //   1   a solo book has one possible answer: assign it and
+                    //       draw no control at all.
+                    //   2   27 of 33 books. Two named buttons, co-narrator first.
+                    //   3+  chips, for this card's cast only.
+                    //
+                    // isOwner marks whose book it is and is NOT viewer-aware, so
+                    // it is never rendered as "you".
+                    if (castError != null) {
+                        Text(
+                            castError,
+                            style = DmnType.Small,
+                            color = DmnTheme.colors.alertRed,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                    if (cast.size == 1) {
+                        Text(
+                            "For ${cast[0].displayName} — the only narrator on this book.",
+                            style = DmnType.Small,
+                            color = DmnTheme.colors.textFaint,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    } else if (cast.isNotEmpty()) {
                         FlowRow(
                             Modifier.padding(top = 6.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            for (n in narrators) {
+                            for (n in cast) {
                                 TextButton(onClick = {
-                                    assignedId = if (assignedId == n.id) null else n.id
+                                    assignedId = if (assignedId == n.narratorId) null else n.narratorId
                                 }) {
                                     Text(
-                                        n.displayName,
+                                        if (n.isOwner) n.displayName else "${n.displayName} · co-narrator",
                                         style = DmnType.Small,
-                                        color = if (assignedId == n.id) {
+                                        color = if (assignedId == n.narratorId) {
                                             DmnTheme.colors.accentAmber
                                         } else {
                                             DmnTheme.colors.textFaint

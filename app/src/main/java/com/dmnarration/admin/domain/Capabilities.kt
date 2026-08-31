@@ -83,6 +83,17 @@ data class Capabilities(
      * claim about Dean's finances that nobody made.
      */
     val canSeeMoney: Boolean,
+
+    /**
+     * Whether this account may CLOSE a pickup the narrator has sent back.
+     *
+     * Separate from canEdit on purpose. resolve_pickup admits editor OR admin
+     * since P1 — verification is Marizete's job, she is the one who listens to
+     * the new audio — but canEdit is false for editors and also gates board
+     * gestures, card editing and archiving. Reusing it would have granted her the
+     * whole board to give her one button.
+     */
+    val canVerifyPickups: Boolean,
 ) {
     companion object {
         fun of(role: UserRole): Capabilities = when (role) {
@@ -93,6 +104,7 @@ data class Capabilities(
                 canEdit = true,
                 canUseWebAdmin = true,
                 canSeeMoney = true,
+                canVerifyPickups = true,
             )
             UserRole.EDITOR -> Capabilities(
                 canViewFinancials = false,
@@ -101,6 +113,8 @@ data class Capabilities(
                 canEdit = false,
                 canUseWebAdmin = false,
                 canSeeMoney = false,
+                // The one thing an editor may do that canEdit does not cover.
+                canVerifyPickups = true,
             )
             UserRole.UNKNOWN -> Capabilities(
                 canViewFinancials = false,
@@ -109,6 +123,7 @@ data class Capabilities(
                 canEdit = false,
                 canUseWebAdmin = false,
                 canSeeMoney = false,
+                canVerifyPickups = false,
             )
         }
     }

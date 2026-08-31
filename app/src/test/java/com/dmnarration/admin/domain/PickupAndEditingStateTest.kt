@@ -82,14 +82,23 @@ class PickupAndEditingStateTest {
         assertFalse(pickup(null).isEditableBy(null))
     }
 
-    @Test fun `an unrecognised status reads as SENT, not DRAFT`() {
-        // DRAFT would offer edit and delete for a row this build does not
-        // understand, and the server would refuse them. SENT offers nothing and
-        // hides nothing.
-        assertEquals(PickupStatus.SENT, PickupStatus.fromStored("something-new"))
-        assertEquals(PickupStatus.SENT, PickupStatus.fromStored(null))
+    @Test fun `an unrecognised status reads as UNKNOWN, not SENT`() {
+        // SUPERSEDED, and this test failing is what caught the change.
+        //
+        // The old rule mapped anything unrecognised to SENT, on the reasoning
+        // that SENT "offers nothing and hides nothing". That stopped being true
+        // the moment SENT gained an action: `returned` arrived, parsed down to
+        // SENT, rendered as "Sent" AND was offered Resolve — which succeeded,
+        // while genuinely-sent rows got a guaranteed error. The label lied on
+        // exactly the rows where the button worked.
+        //
+        // UNKNOWN is the honest answer: this build does not know the state, so
+        // it says so and offers nothing.
+        assertEquals(PickupStatus.UNKNOWN, PickupStatus.fromStored("something-new"))
+        assertEquals(PickupStatus.UNKNOWN, PickupStatus.fromStored(null))
         assertEquals(PickupStatus.DRAFT, PickupStatus.fromStored("draft"))
         assertEquals(PickupStatus.DISMISSED, PickupStatus.fromStored("DISMISSED"))
+        assertEquals(PickupStatus.RETURNED, PickupStatus.fromStored("returned"))
     }
 
     @Test fun `only a misread needs the said pair`() {

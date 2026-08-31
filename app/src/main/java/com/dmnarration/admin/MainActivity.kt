@@ -369,6 +369,7 @@ private fun BoardRoute(
                 onSave = settingsVm::save,
                 onEdited = settingsVm::clearWrite,
                 onBack = { settingsOpen = false },
+                onSignOut = onSignOut,
             )
         }
     }
@@ -396,6 +397,8 @@ private fun BoardRoute(
                 onDeletePickup = detailVm::deletePickup,
                 onSendChapter = detailVm::sendChapter,
                 onResolvePickup = detailVm::resolvePickup,
+                onMarkReturned = detailVm::markPickupReturned,
+                onAdminDeletePickup = detailVm::adminDeletePickup,
             )
         }
     }

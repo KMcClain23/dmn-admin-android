@@ -9,7 +9,7 @@ import com.dmnarration.admin.domain.CardDetail
 import com.dmnarration.admin.domain.Capabilities
 import com.dmnarration.admin.domain.FieldWrite
 import com.dmnarration.admin.domain.Pickup
-import com.dmnarration.admin.domain.Narrator
+import com.dmnarration.admin.domain.CastMember
 import com.dmnarration.admin.domain.PickupKind
 import com.dmnarration.admin.domain.PickupStatus
 import com.dmnarration.admin.domain.UserRole
@@ -46,7 +46,9 @@ data class CardDetailUiState(
     /** A pickup write that failed. Separate from `error`, which is the card read. */
     val pickupError: String? = null,
     /** Narrators an editor may assign to. Id and name only; no email. */
-    val narrators: List<Narrator> = emptyList(),
+    val cast: List<CastMember> = emptyList(),
+    /** Why the cast is empty, when it is empty for a reason. */
+    val castError: String? = null,
     /**
      * What the last send reported.
      *
@@ -211,7 +213,7 @@ class CardDetailViewModel @Inject constructor(
             board.cardDetail(cardId, role)
                 .onSuccess { detail ->
                     launch { loadPickups() }
-                    launch { loadNarrators() }
+                    launch { loadCast() }
                     _state.value = _state.value.copy(
                         loading = false,
                         refreshing = false,
@@ -347,6 +349,24 @@ class CardDetailViewModel @Inject constructor(
         }
     }
 
+    /** "I have re-recorded this." SENT -> RETURNED, and only from sent. */
+    fun markPickupReturned(id: String) = write {
+        board.markPickupReturned(id)
+    }
+
+    /**
+     * ADMIN ONLY, and three things apart from the delete above it.
+     *
+     * `deletePickup` removes HER OWN UNSENT DRAFT and is bounded by
+     * delete_own_draft_pickup. This one removes any pickup, including one a
+     * narrator has already been emailed about — and it is not Dismiss either:
+     * dismiss closes something real and keeps it in the history, this is for rows
+     * that should never have existed.
+     */
+    fun adminDeletePickup(id: String) = write {
+        board.deletePickup(id)
+    }
+
     fun resolvePickup(id: String, status: PickupStatus) = write {
         board.resolvePickup(id, status)
     }
@@ -371,12 +391,24 @@ class CardDetailViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadNarrators() {
-        board.narrators()
-            .onSuccess { _state.value = _state.value.copy(narrators = it) }
-            // A failed narrator read leaves the picker empty, which is visible.
-            // It must not blank the card.
-            .onFailure { }
+    /**
+     * THIS CARD'S CAST, replacing the nineteen-name roster.
+     *
+     * card_cast raises rather than returning a short list, and that refusal is
+     * kept: it surfaces as an empty picker AND a message, so "the cast could not
+     * be read" never looks like "this book has no co-narrators". Swallowing it
+     * into an empty list is what would put a pickup on the wrong narrator.
+     */
+    private suspend fun loadCast() {
+        val cardId = loadedId ?: return
+        board.cardCast(cardId)
+            .onSuccess { _state.value = _state.value.copy(cast = it, castError = null) }
+            .onFailure {
+                _state.value = _state.value.copy(
+                    cast = emptyList(),
+                    castError = it.message ?: "The cast for this book could not be read.",
+                )
+            }
     }
 
     private suspend fun loadPickups() {

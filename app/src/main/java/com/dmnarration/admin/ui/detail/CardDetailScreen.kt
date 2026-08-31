@@ -73,6 +73,8 @@ fun CardDetailScreen(
     onDeletePickup: (String) -> Unit,
     onSendChapter: (String) -> Unit,
     onResolvePickup: (String, PickupStatus) -> Unit,
+    onMarkReturned: (String) -> Unit,
+    onAdminDeletePickup: (String) -> Unit,
 ) {
     val c = DmnTheme.colors
     val detail = state.detail
@@ -126,6 +128,7 @@ fun CardDetailScreen(
                         detail, capabilities, state, onSaveField, onEditField,
                         onSetProgress, onMarkComplete, onRaisePickup,
                         onDeletePickup, onSendChapter, onResolvePickup,
+                        onMarkReturned, onAdminDeletePickup,
                     )
                     state.loading -> item {
                         Text("Loading…", style = DmnType.Body, color = c.textFaint)
@@ -148,6 +151,8 @@ private fun LazyListScope.detailBody(
     onDeletePickup: (String) -> Unit,
     onSendChapter: (String) -> Unit,
     onResolvePickup: (String, PickupStatus) -> Unit,
+    onMarkReturned: (String) -> Unit,
+    onAdminDeletePickup: (String) -> Unit,
 ) {
     item { Header(d, capabilities) }
 
@@ -215,18 +220,24 @@ private fun LazyListScope.detailBody(
         PickupsSection(
             pickups = state.pickups,
             userId = state.userId,
-            narrators = state.narrators,
+            cast = state.cast,
+            castError = state.castError,
             canRaise = true,
-            // Resolving is Dean's. canEdit is the closest existing capability to
-            // "this session is the admin"; the SERVER is the actual gate and
-            // refuses an editor regardless of what is drawn here.
-            canResolve = capabilities.canEdit,
+            // VERIFICATION IS THE EDITOR'S, and canEdit is false for editors —
+            // so reusing it hid Resolve from the one person the step belongs to.
+            // canVerifyPickups says exactly this and nothing else; canEdit still
+            // gates board gestures and card editing and is untouched.
+            canResolve = capabilities.canVerifyPickups,
+            // Removing a row outright stays Dean's.
+            canDelete = capabilities.canEdit,
             error = state.pickupError,
             report = state.sendReport,
             onRaise = onRaisePickup,
             onDelete = onDeletePickup,
             onSendChapter = onSendChapter,
             onResolve = onResolvePickup,
+            onMarkReturned = onMarkReturned,
+            onAdminDelete = onAdminDeletePickup,
         )
     }
 

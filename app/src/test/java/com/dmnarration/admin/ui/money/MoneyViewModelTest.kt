@@ -2,6 +2,7 @@ package com.dmnarration.admin.ui.money
 
 import com.dmnarration.admin.data.BoardAccessNotEnabledException
 import com.dmnarration.admin.data.BoardRepository
+import com.dmnarration.admin.domain.CastMember
 import com.dmnarration.admin.domain.Payout
 import com.dmnarration.admin.domain.PayoutSummary
 import com.dmnarration.admin.domain.CareerTotals
@@ -89,8 +90,10 @@ class MoneyViewModelTest {
         override suspend fun updateOwnDraftPickup(id: String, chapter: String, timestampAt: String, kind: PickupKind, said: String, shouldBe: String, note: String, assignedNarratorId: String?): Result<Unit> = Result.success(Unit)
         override suspend fun deleteOwnDraftPickup(id: String): Result<Unit> = Result.success(Unit)
         override suspend fun sendChapterPickups(cardId: String, chapter: String): Result<SendPickupsResult> = Result.success(SendPickupsResult())
-        override suspend fun narrators(): Result<List<Narrator>> = Result.success(emptyList())
-        override suspend fun resolvePickup(id: String, status: PickupStatus): Result<Unit> = Result.success(Unit)
+    override suspend fun cardCast(cardId: String) = Result.success(emptyList<CastMember>())
+    override suspend fun resolvePickup(id: String, status: PickupStatus) = Result.success(Unit)
+    override suspend fun markPickupReturned(id: String) = Result.success(Unit)
+    override suspend fun deletePickup(id: String) = Result.success(Unit)
         override suspend fun archived(): Result<List<ArchivedCard>> = Result.success(emptyList())
         // Not under test here. Null is the "could not read" answer, and the
         // screen shows no career figure for it — which is what these tests

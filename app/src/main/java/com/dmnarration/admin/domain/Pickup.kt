@@ -49,6 +49,12 @@ data class Pickup(
     fun isEditableBy(userId: String?): Boolean =
         isDraft && userId != null && createdBy == userId
 
+    /** The narrator has sent it back; it is the editor's turn to listen and close. */
+    val isReturned: Boolean get() = status == PickupStatus.RETURNED
+
+    /** Out with a narrator. The only state from which "Re-recorded" makes sense. */
+    val isAwaitingNarrator: Boolean get() = status == PickupStatus.SENT
+
     /** Null id means nobody is assigned — which is not the same as unreachable. */
     val isAssigned: Boolean get() = assignedNarratorId != null
 
@@ -78,19 +84,39 @@ enum class PickupKind(val stored: String, val label: String) {
 enum class PickupStatus(val stored: String, val label: String) {
     DRAFT("draft", "Draft"),
     SENT("sent", "Sent"),
+
+    /** The narrator has re-recorded it. Waiting on the editor to listen and close. */
+    RETURNED("returned", "Re-recorded"),
+
     RESOLVED("resolved", "Resolved"),
-    DISMISSED("dismissed", "Dismissed");
+    DISMISSED("dismissed", "Dismissed"),
+
+    /**
+     * A STATUS THIS BUILD DOES NOT KNOW.
+     *
+     * This is the class-level fix, and it matters more than adding RETURNED.
+     *
+     * `fromStored` used to fall back to SENT, which is how a returned pickup came
+     * to render as "Sent" AND be offered a Resolve button — the one row where
+     * Resolve happened to work was the one whose label was wrong, and the rows
+     * labelled correctly got a guaranteed error. Adding RETURNED to the list
+     * fixes today and leaves the NEXT status to reproduce this exactly.
+     *
+     * A phone shipped against a schema that keeps growing has to be able to say
+     * "I do not know what this is". So an unrecognised value lands here, is
+     * rendered honestly, and is offered NO ACTIONS AT ALL — because this build
+     * cannot know which transitions the server would accept from a state it has
+     * never heard of.
+     */
+    UNKNOWN("", "Unknown status — update the app");
+
+    /** Whether this build understands the row well enough to offer anything. */
+    val isKnown: Boolean get() = this != UNKNOWN
 
     companion object {
-        /**
-         * Unrecognised maps to SENT, not DRAFT.
-         *
-         * DRAFT would offer edit and delete buttons for a row this build does not
-         * understand, and the server would refuse them. SENT is the state that
-         * offers nothing and hides nothing — visible, and not editable.
-         */
         fun fromStored(value: String?): PickupStatus =
-            entries.firstOrNull { it.stored == value?.trim()?.lowercase() } ?: SENT
+            entries.firstOrNull { it != UNKNOWN && it.stored == value?.trim()?.lowercase() }
+                ?: UNKNOWN
     }
 }
 

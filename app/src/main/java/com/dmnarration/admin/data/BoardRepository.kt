@@ -16,7 +16,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.Pickup
-import com.dmnarration.admin.domain.Narrator
+import com.dmnarration.admin.domain.CastMember
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import com.dmnarration.admin.domain.PickupKind
@@ -137,7 +137,21 @@ interface BoardRepository {
     suspend fun setEditingProgress(cardId: String, chaptersEdited: Int?, chaptersTotal: Int?): Result<Unit>
     suspend fun setEditingComplete(cardId: String, complete: Boolean): Result<Unit>
     /** Narrators an editor may assign to. Name and id only; no email. */
-    suspend fun narrators(): Result<List<Narrator>>
+    /**
+     * THIS BOOK'S CAST, not the nineteen-name roster.
+     *
+     * card_cast RAISES on an unparseable co_narrator or a name with no narrators
+     * row. That is deliberate and must NOT be swallowed into an empty list: a
+     * cast quietly short by one is a pickup assigned to the wrong person, and an
+     * empty picker at least says something is wrong.
+     */
+    suspend fun cardCast(cardId: String): Result<List<CastMember>>
+
+    /** Moves a SENT pickup to RETURNED. The narrator has re-recorded it. */
+    suspend fun markPickupReturned(id: String): Result<Unit>
+
+    /** ADMIN ONLY. Permanently removes a pickup. Not the same as dismissing it. */
+    suspend fun deletePickup(id: String): Result<Unit>
 
     suspend fun createPickup(
         cardId: String, chapter: String, timestampAt: String, kind: PickupKind,
@@ -363,14 +377,21 @@ class SupabaseBoardRepository @Inject constructor(
             put("p_complete", complete)
         }
 
-    override suspend fun narrators(): Result<List<Narrator>> = runCatching {
+    override suspend fun cardCast(cardId: String): Result<List<CastMember>> = runCatching {
         try {
-            client.postgrest.rpc("narrators_for_editor")
-                .decodeList<NarratorDto>().map { it.toDomain() }
+            client.postgrest.rpc("card_cast", buildJsonObject { put("p_card_id", cardId) })
+                .decodeList<CastMemberDto>().map { it.toDomain() }
         } catch (t: Throwable) {
             if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
         }
     }
+
+    override suspend fun markPickupReturned(id: String): Result<Unit> =
+        rpcUnit("mark_pickup_returned") { put("p_id", id) }
+
+    override suspend fun deletePickup(id: String): Result<Unit> =
+        rpcUnit("delete_pickup") { put("p_id", id) }
+
 
     override suspend fun createPickup(
         cardId: String, chapter: String, timestampAt: String, kind: PickupKind,
