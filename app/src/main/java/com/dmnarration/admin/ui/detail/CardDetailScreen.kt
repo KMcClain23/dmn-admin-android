@@ -59,6 +59,26 @@ import kotlin.time.Instant
  * list in the migration. Financial fields go through [Capabilities], never a role
  * comparison.
  */
+/**
+ * What the link says beneath its title, so it is worth tapping.
+ *
+ * A row reading only "Editing & pickups →" makes you open it to find out
+ * whether anything is there. The counts come from state the screen already
+ * holds, so this costs no extra read.
+ */
+private fun editingSummary(state: CardDetailUiState): String {
+    val open = state.pickups.count {
+        it.status != PickupStatus.RESOLVED && it.status != PickupStatus.DISMISSED
+    }
+    val edited = state.detail?.chaptersEdited ?: 0
+    val progress = when {
+        state.detail?.editingCompletedAt != null -> "Editing complete"
+        edited > 0 -> "$edited chapter${if (edited == 1) "" else "s"} edited"
+        else -> "Not started"
+    }
+    return if (open == 0) progress else "$progress · $open open pickup${if (open == 1) "" else "s"}"
+}
+
 @Composable
 fun CardDetailScreen(
     state: CardDetailUiState,
@@ -67,14 +87,16 @@ fun CardDetailScreen(
     onRefresh: () -> Unit,
     onSaveField: (String, String) -> Unit,
     onEditField: (String) -> Unit,
-    onSetProgress: (Int?, Int?) -> Unit,
-    onMarkComplete: (Boolean) -> Unit,
-    onRaisePickup: (String, String, PickupKind, String, String, String, String?) -> Unit,
-    onDeletePickup: (String) -> Unit,
-    onSendChapter: (String) -> Unit,
-    onResolvePickup: (String, PickupStatus) -> Unit,
-    onMarkReturned: (String) -> Unit,
-    onAdminDeletePickup: (String) -> Unit,
+    /**
+     * Open the Editing tab on this book.
+     *
+     * THE ONLY THING THIS SCREEN DOES ABOUT EDITING OR PICKUPS NOW. Both
+     * sections used to render here as well as being the Editing tab's whole
+     * content, and two screens that both write pickups is how one rule becomes
+     * two implementations that drift. The composables MOVED to ui/editing;
+     * nothing was copied.
+     */
+    onOpenEditing: () -> Unit,
 ) {
     val c = DmnTheme.colors
     val detail = state.detail
@@ -124,12 +146,16 @@ fun CardDetailScreen(
                     state.missing -> item {
                         Text("That card no longer exists.", style = DmnType.Body, color = c.textMuted)
                     }
-                    detail != null -> detailBody(
-                        detail, capabilities, state, onSaveField, onEditField,
-                        onSetProgress, onMarkComplete, onRaisePickup,
-                        onDeletePickup, onSendChapter, onResolvePickup,
-                        onMarkReturned, onAdminDeletePickup,
-                    )
+                    detail != null ->
+                        detailBody(
+                            d = detail,
+                            capabilities = capabilities,
+                            state = state,
+                            colors = c,
+                            onSaveField = onSaveField,
+                            onEditField = onEditField,
+                            onOpenEditing = onOpenEditing,
+                        )
                     state.loading -> item {
                         Text("Loading…", style = DmnType.Body, color = c.textFaint)
                     }
@@ -143,17 +169,12 @@ private fun LazyListScope.detailBody(
     d: CardDetail,
     capabilities: Capabilities,
     state: CardDetailUiState,
+    colors: com.dmnarration.admin.ui.theme.DmnColors,
     onSaveField: (String, String) -> Unit,
     onEditField: (String) -> Unit,
-    onSetProgress: (Int?, Int?) -> Unit,
-    onMarkComplete: (Boolean) -> Unit,
-    onRaisePickup: (String, String, PickupKind, String, String, String, String?) -> Unit,
-    onDeletePickup: (String) -> Unit,
-    onSendChapter: (String) -> Unit,
-    onResolvePickup: (String, PickupStatus) -> Unit,
-    onMarkReturned: (String) -> Unit,
-    onAdminDeletePickup: (String) -> Unit,
+    onOpenEditing: () -> Unit,
 ) {
+    val c = colors
     item { Header(d, capabilities) }
 
     // ONE row per field, in the groups the web modal decided. There is no
@@ -203,42 +224,33 @@ private fun LazyListScope.detailBody(
         }
     }
 
-    // Editing progress and pickups. Both are non-financial and both are the
-    // editor's, so they sit above the descriptive sections rather than at the
-    // bottom with the links.
+    /*
+      ONE LINK, AND NO ACTIONS.
+
+      Editing progress, raising a pickup, marking one re-recorded, resolving,
+      dismissing and removing all live on the Editing tab now. Leaving even one
+      of them here would mean two places that write pickups — which is the exact
+      shape of the drift this move exists to prevent, and the reason a test
+      asserts this screen offers no pickup action at all.
+    */
     item {
-        EditingSection(
-            detail = d,
-            // An editor may write these; so may Dean, because the gate admits
-            // admin too. Anyone who can see the card can record progress on it.
-            canEdit = true,
-            onSetProgress = onSetProgress,
-            onMarkComplete = onMarkComplete,
-        )
-    }
-    item {
-        PickupsSection(
-            pickups = state.pickups,
-            userId = state.userId,
-            cast = state.cast,
-            castError = state.castError,
-            canRaise = true,
-            // VERIFICATION IS THE EDITOR'S, and canEdit is false for editors —
-            // so reusing it hid Resolve from the one person the step belongs to.
-            // canVerifyPickups says exactly this and nothing else; canEdit still
-            // gates board gestures and card editing and is untouched.
-            canResolve = capabilities.canVerifyPickups,
-            // Removing a row outright stays Dean's.
-            canDelete = capabilities.canEdit,
-            error = state.pickupError,
-            report = state.sendReport,
-            onRaise = onRaisePickup,
-            onDelete = onDeletePickup,
-            onSendChapter = onSendChapter,
-            onResolve = onResolvePickup,
-            onMarkReturned = onMarkReturned,
-            onAdminDelete = onAdminDeletePickup,
-        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenEditing)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Editing & pickups", style = DmnType.Body, color = c.textPrimary)
+                Text(
+                    editingSummary(state),
+                    style = DmnType.Small,
+                    color = c.textMuted,
+                )
+            }
+            Text("→", style = DmnType.Title, color = c.accentAmber)
+        }
     }
 
     d.notes?.let { item { Section("Notes") { Body(it) } } }

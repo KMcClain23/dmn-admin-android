@@ -17,6 +17,8 @@ import kotlinx.serialization.json.put
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.domain.Pickup
 import com.dmnarration.admin.domain.CastMember
+import com.dmnarration.admin.domain.EditorAssignment
+import com.dmnarration.admin.domain.NeedsMe
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import com.dmnarration.admin.domain.PickupKind
@@ -146,6 +148,24 @@ interface BoardRepository {
      * empty picker at least says something is wrong.
      */
     suspend fun cardCast(cardId: String): Result<List<CastMember>>
+
+    /**
+     * What is waiting on the signed-in person, whoever they are.
+     *
+     * NO ROLE PARAMETER, and that is the difference from `pickups(role)`. The
+     * function resolves the role itself and returns an admin's `sent` rows or an
+     * editor's `returned` ones, so the answer to "which rows count" lives in one
+     * place. Passing a role here would invite the client to decide, and the
+     * client deciding permissions from its own copy is bug 6.
+     */
+    suspend fun pickupsNeedingMe(): Result<List<NeedsMe>>
+
+    /** Who holds which book. Only claimed books come back; absence is unclaimed. */
+    suspend fun editorAssignments(): Result<List<EditorAssignment>>
+
+    suspend fun claimCard(cardId: String): Result<Unit>
+
+    suspend fun releaseCard(cardId: String): Result<Unit>
 
     /** Moves a SENT pickup to RETURNED. The narrator has re-recorded it. */
     suspend fun markPickupReturned(id: String): Result<Unit>
@@ -385,6 +405,30 @@ class SupabaseBoardRepository @Inject constructor(
             if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
         }
     }
+
+    override suspend fun pickupsNeedingMe(): Result<List<NeedsMe>> = runCatching {
+        try {
+            client.postgrest.rpc("pickups_needing_me")
+                .decodeList<NeedsMeDto>().map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
+    override suspend fun editorAssignments(): Result<List<EditorAssignment>> = runCatching {
+        try {
+            client.postgrest.rpc("editor_assignments")
+                .decodeList<EditorAssignmentDto>().map { it.toDomain() }
+        } catch (t: Throwable) {
+            if (t.isBoardAccessRefusal()) throw BoardAccessNotEnabledException() else throw t
+        }
+    }
+
+    override suspend fun claimCard(cardId: String): Result<Unit> =
+        rpcUnit("claim_card_for_editing") { put("p_card_id", cardId) }
+
+    override suspend fun releaseCard(cardId: String): Result<Unit> =
+        rpcUnit("release_card_editing") { put("p_card_id", cardId) }
 
     override suspend fun markPickupReturned(id: String): Result<Unit> =
         rpcUnit("mark_pickup_returned") { put("p_id", id) }

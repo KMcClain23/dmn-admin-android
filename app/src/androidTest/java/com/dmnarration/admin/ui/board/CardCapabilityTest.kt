@@ -64,6 +64,11 @@ class CardCapabilityTest {
         narratorSharePercent = null,
         recordingDates = emptyList(),
         wordsRecorded = 0,
+        // Added when page progress shipped; these fixtures were never updated,
+        // which broke the whole androidTest compile and took every instrumented
+        // test down with it — including the bottom bar's width measurement.
+        totalPages = null,
+        currentPage = null,
         createdAt = Instant.parse("2026-08-01T00:00:00Z"),
     )
 

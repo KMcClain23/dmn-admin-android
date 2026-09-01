@@ -3,6 +3,9 @@ package com.dmnarration.admin
 import androidx.activity.compose.BackHandler
 import com.dmnarration.admin.ui.detail.CardDetailScreen
 import com.dmnarration.admin.ui.detail.CardDetailViewModel
+import com.dmnarration.admin.ui.editing.EditingBookPane
+import com.dmnarration.admin.ui.editing.EditingViewModel
+import com.dmnarration.admin.ui.editing.EditingScreen
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.NavigationBar
@@ -16,6 +19,7 @@ import com.dmnarration.admin.ui.shelf.ArchiveScreen
 import com.dmnarration.admin.ui.shelf.ReleasedScreen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Today
@@ -65,6 +69,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dmnarration.admin.ui.AuthState
 import com.dmnarration.admin.domain.BoardCard
 import com.dmnarration.admin.ui.AppViewModel
+import com.dmnarration.admin.ui.UpdatePrompt
 import com.dmnarration.admin.ui.auth.SignInScreen
 import com.dmnarration.admin.ui.board.BoardScreen
 import com.dmnarration.admin.ui.board.BoardViewModel
@@ -187,7 +192,14 @@ private fun AppRoot(modifier: Modifier = Modifier) {
                 }
             }
 
-            is AuthState.SignedIn -> BoardRoute(role = s.role, userId = s.userId, onSignOut = app::signOut)
+            is AuthState.SignedIn -> {
+                // Only once signed in: an update prompt over the sign-in screen
+                // interrupts someone who is mid-password, and a session that
+                // cannot be established is not the moment to ask about anything
+                // else.
+                UpdatePrompt()
+                BoardRoute(role = s.role, userId = s.userId, onSignOut = app::signOut)
+            }
         }
     }
 }
@@ -210,6 +222,15 @@ private enum class Destination(val label: String, val icon: ImageVector) {
      * things that are no longer in front of Dean. The tabs inside say which is
      * which, so the group label only has to be a true superset.
      */
+    /**
+     * Editing progress and pickups, for whoever is signed in.
+     *
+     * FIVE DESTINATIONS IS MATERIAL'S CEILING and this is the fifth — for an
+     * admin. An editor sees four, because Money is absent for her. The bar's
+     * wrapping test measures the labels at NARROWEST_SUPPORTED_WIDTH, and
+     * "Editing" is one character shorter than "History", which already fits.
+     */
+    EDITING("Editing", Icons.Default.Edit),
     HISTORY("History", Icons.Default.Inventory2),
     /** Payments and Expenses. The card detail screen already calls this MONEY. */
     MONEY("Money", Icons.Default.Payments),
@@ -249,6 +270,12 @@ private fun BoardRoute(
     val moneyVm: MoneyViewModel = hiltViewModel()
     val money by moneyVm.state.collectAsStateWithLifecycle()
     val settingsVm: SettingsViewModel = hiltViewModel()
+    val editingVm: EditingViewModel = hiltViewModel()
+    val editing by editingVm.state.collectAsStateWithLifecycle()
+    // Which book the Editing tab has open. Separate from selectedCardId, which
+    // is the card-detail overlay: opening a book here must not put the full card
+    // on screen, and coming back from it must return to the Editing list.
+    var editingBookId by rememberSaveable { mutableStateOf<String?>(null) }
     val settingsState by settingsVm.state.collectAsStateWithLifecycle()
     // An id rather than a card: Released and Archive open the same detail sheet
     // from rows that are not BoardCards, and `card_detail()` only ever needed
@@ -273,6 +300,7 @@ private fun BoardRoute(
         shelfVm.start(role)
         moneyVm.start(role)
         settingsVm.start(role)
+        editingVm.start(role, userId)
     }
     // A changed rate re-costs every card, so the board re-reads rather than
     // keeping figures derived from a number that is no longer stored.
@@ -289,6 +317,9 @@ private fun BoardRoute(
     LaunchedEffect(where) {
         if (where == Destination.HISTORY) shelfVm.onShown()
         if (where == Destination.MONEY) moneyVm.onShown()
+        // Counts go stale while she is elsewhere; a returned pickup arriving is
+        // exactly the thing this tab exists to surface.
+        if (where == Destination.EDITING) editingVm.refresh()
     }
 
     // A destination that stops existing must not stay selected. Reachable if a
@@ -298,6 +329,11 @@ private fun BoardRoute(
     val destinations = destinationsFor(state.capabilities)
     LaunchedEffect(destinations) {
         if (where !in destinations) where = Destination.BOARD
+    }
+    // The same rule for the overlay: a capability that goes away closes what it
+    // was holding open.
+    LaunchedEffect(state.capabilities.canViewStudioSettings) {
+        if (!state.capabilities.canViewStudioSettings) settingsOpen = false
     }
 
     Column(Modifier.fillMaxSize().background(Background)) {
@@ -331,8 +367,24 @@ private fun BoardRoute(
                     onRefresh = moneyVm::refresh,
                 )
 
+                Destination.EDITING -> EditingScreen(
+                    state = editing,
+                    onRefresh = editingVm::refresh,
+                    onOpenBook = { editingBookId = it },
+                    onClaim = editingVm::claim,
+                    onUnclaim = editingVm::unclaim,
+                    onDismissClaimError = editingVm::clearClaimError,
+                )
+
                 Destination.TODAY -> AgendaScreen(
                     agenda = state.agenda,
+                    // The SAME source the Editing tab pins, so "what is waiting
+                    // on me" has one answer across the app.
+                    needsMe = editing.needsMe,
+                    onOpenPickup = {
+                        where = Destination.EDITING
+                        editingBookId = it
+                    },
                     refreshing = state.refreshing,
                     // The refused message belongs on both screens: the agenda is the
                     // same data, so a session that may not read the board may not
@@ -345,7 +397,21 @@ private fun BoardRoute(
         }
 
         DmnNavigationBar(
-            onSettings = { settingsOpen = true },
+            /*
+             * THE GEAR IS ABSENT FOR AN ACCOUNT THAT MAY NOT READ SETTINGS.
+             *
+             * `canViewStudioSettings` used to gate only the FETCH, so an editor
+             * could open this screen and look at Dean's availability, rates and
+             * capacity. Absent rather than disabled, for the same reason Money
+             * is absent: a disabled control advertises a room she may not enter.
+             * See the capability's own comment for why this had to land before
+             * the screen's separate "Not set" bug is fixed.
+             */
+            onSettings = if (state.capabilities.canViewStudioSettings) {
+                { settingsOpen = true }
+            } else {
+                null
+            },
             items = destinations.map { d ->
                 NavItem(
                     label = d.label,
@@ -357,10 +423,52 @@ private fun BoardRoute(
         )
     }
 
+    /*
+      The book pane, layered like the others.
+
+      IT USES CardDetailViewModel, keyed by the book id — the same view model the
+      card overlay uses, because it already owns every write EditingSection and
+      PickupsSection make. A second view model with the same methods would be the
+      duplication this move exists to remove, one layer further down.
+    */
+    editingBookId?.let { bookId ->
+        val bookVm: CardDetailViewModel = hiltViewModel(key = "editing-$bookId")
+        val bookState by bookVm.state.collectAsStateWithLifecycle()
+        LaunchedEffect(bookId, role) { bookVm.start(bookId, role, userId) }
+
+        BackHandler { editingBookId = null }
+
+        Box(Modifier.fillMaxSize().background(Background)) {
+            EditingBookPane(
+                state = bookState,
+                capabilities = state.capabilities,
+                onBack = {
+                    editingBookId = null
+                    // Progress and pickup counts on the list behind this have
+                    // just changed; without this they stay as they were until
+                    // something else happens to reload.
+                    editingVm.onBookChanged()
+                },
+                onSetProgress = bookVm::setProgress,
+                onMarkComplete = bookVm::markComplete,
+                onRaisePickup = bookVm::raisePickup,
+                onDeletePickup = bookVm::deletePickup,
+                onSendChapter = bookVm::sendChapter,
+                onResolvePickup = bookVm::resolvePickup,
+                onMarkReturned = bookVm::markPickupReturned,
+                onAdminDeletePickup = bookVm::adminDeletePickup,
+            )
+        }
+    }
+
     // Settings, layered over whatever is underneath rather than replacing a tab.
     // It is read-only and consulted rarely, which is exactly why it stopped being
     // worth a permanent slot in a bar that had no width left.
-    if (settingsOpen) {
+    // BOTH conditions, not just the flag. Hiding the gear removes the way IN;
+    // this removes the screen. A role re-resolved downward while Settings is
+    // open would otherwise leave it on screen, which is the one moment the
+    // account genuinely may not see it.
+    if (settingsOpen && state.capabilities.canViewStudioSettings) {
         BackHandler { settingsOpen = false }
         Box(Modifier.fillMaxSize().background(Background)) {
             SettingsScreen(
@@ -391,14 +499,15 @@ private fun BoardRoute(
                 onRefresh = detailVm::refresh,
                 onSaveField = detailVm::save,
                 onEditField = detailVm::clearWrite,
-                onSetProgress = detailVm::setProgress,
-                onMarkComplete = detailVm::markComplete,
-                onRaisePickup = detailVm::raisePickup,
-                onDeletePickup = detailVm::deletePickup,
-                onSendChapter = detailVm::sendChapter,
-                onResolvePickup = detailVm::resolvePickup,
-                onMarkReturned = detailVm::markPickupReturned,
-                onAdminDeletePickup = detailVm::adminDeletePickup,
+                // The card sends you to the Editing tab; it no longer does any
+                // of it itself. Closing the card first, so Back from the book
+                // pane returns to the Editing list rather than to a card that is
+                // still stacked underneath.
+                onOpenEditing = {
+                    selectedCardId = null
+                    where = Destination.EDITING
+                    editingBookId = cardId
+                },
             )
         }
     }

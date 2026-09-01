@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Settings
@@ -59,8 +60,18 @@ class NavigationBarFitTest {
         return results
     }
 
-    /** The four destinations the app actually ships, with their real labels. */
-    private val shipped = listOf("Today", "Board", "History", "Money")
+    /**
+     * The destinations the app actually ships, with their real labels.
+     *
+     * FIVE NOW, which is Material's stated ceiling and one more than the four
+     * that fixed the original wrapping. "Editing" was added in 0.3.0; it is a
+     * character shorter than "History", which already fitted, but that is an
+     * argument and not a measurement — this is the measurement.
+     *
+     * An EDITOR sees four of these (Money is absent for her), so the five-item
+     * case is the worst one and the only one worth pinning.
+     */
+    private val shipped = listOf("Today", "Board", "Editing", "History", "Money")
 
     /**
      * The seven that wrapped. Kept verbatim so the failing case is the real
@@ -106,6 +117,7 @@ class NavigationBarFitTest {
         val icons = listOf(
             Icons.Default.Today,
             Icons.Default.Dashboard,
+            Icons.Default.Edit,
             Icons.Default.Inventory2,
             Icons.Default.Payments,
             Icons.Default.Settings,

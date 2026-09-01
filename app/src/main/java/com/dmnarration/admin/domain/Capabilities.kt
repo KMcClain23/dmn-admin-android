@@ -51,6 +51,31 @@ enum class UserRole {
 data class Capabilities(
     /** pfh_rate, payment_type, estimated earnings. */
     val canViewFinancials: Boolean,
+    /**
+     * Whether the Settings screen EXISTS for this account — reachability, not
+     * just whether its fetch runs.
+     *
+     * ── THE ORDERING RULE, WHICH IS THE WHOLE POINT OF THIS COMMENT ─────────
+     *
+     * This gate must land BEFORE OR WITH any fix to the Settings screen's
+     * reading of `site_settings`. NEVER AFTER.
+     *
+     * For a while it gated only a fetch in BoardViewModel, so an editor could
+     * open the screen and see Dean's availability, rates and capacity. It leaked
+     * nothing solely because a SECOND bug stopped the screen reading any value —
+     * every row said "Not set in site_settings" for admin and editor alike,
+     * while all five rows are in fact populated (words_per_finished_hour 9400,
+     * words_per_narration_hour 5000, daily_capacity 6, heavy_day 4,
+     * max_books 2).
+     *
+     * Two bugs cancelling is not safety. The "Not set" bug looks cosmetic and
+     * somebody will fix it; the moment they do, Dean's rates appear on his
+     * editor's phone. That is why reachability is gated here first and the
+     * reader bug is deliberately left alone in this release.
+     *
+     * Sign out is NOT lost by hiding this: it lives on the board's overflow menu
+     * and on the Editing screen's, both reachable by an editor.
+     */
     val canViewStudioSettings: Boolean,
     val canViewConfidentialCovers: Boolean,
     val canEdit: Boolean,

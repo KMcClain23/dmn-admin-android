@@ -102,7 +102,7 @@ android {
         // replacing the narrator roster, sign-out in Settings and delete. Two
         // builds on the testing track both reading "0.1.0" is the same ambiguity
         // the UNKNOWN status fix just removed from the app.
-        versionName = "0.2.0"
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -429,6 +429,8 @@ dependencies {
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.functions)
     implementation(libs.ktor.client.okhttp)
+
+    implementation(libs.play.app.update.ktx)
 
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)

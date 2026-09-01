@@ -38,6 +38,15 @@ coil = "3.5.0"
 kotlinxDatetime = "0.8.0"
 kotlinxSerializationJson = "1.11.0"
 datastorePreferences = "1.2.1"
+
+# Play In-App Updates. Pinned like everything else here.
+#
+# THE FLOW ONLY EXISTS FOR A BUILD INSTALLED FROM PLAY. On a debug build, a
+# sideload, or an emulator without Play services, the manager reports
+# UPDATE_NOT_AVAILABLE or fails outright — which is why the wiring below is
+# written to be silent on failure rather than to surface an error the user can
+# do nothing about.
+playAppUpdate = "2.1.0"
 securityCrypto = "1.1.0"
 
 junit = "4.13.2"
@@ -48,6 +57,7 @@ androidxTestExt = "1.3.0"
 espresso = "3.7.0"
 
 [libraries]
+play-app-update-ktx = { module = "com.google.android.play:app-update-ktx", version.ref = "playAppUpdate" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }

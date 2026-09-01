@@ -26,7 +26,10 @@ import com.dmnarration.admin.domain.AgendaTier
 import com.dmnarration.admin.domain.dateFor
 import com.dmnarration.admin.domain.AgendaReason
 import com.dmnarration.admin.domain.relativeDeadline
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.font.FontFamily
 import com.dmnarration.admin.domain.BoardCard
+import com.dmnarration.admin.domain.NeedsMe
 import com.dmnarration.admin.domain.DUE_SOON_DAYS
 import com.dmnarration.admin.domain.daysUntil
 import com.dmnarration.admin.domain.pageLine
@@ -56,8 +59,23 @@ fun AgendaScreen(
     agenda: Agenda,
     refreshing: Boolean,
     error: String?,
+    /**
+     * Pickups waiting on the signed-in person, from `pickups_needing_me()`.
+     *
+     * NOT MERGED INTO THE AGENDA, and that is the whole design of it. Everything
+     * else on this screen is scheduled work with a date; a pickup has only a
+     * sent_at, so it cannot be "due today" and must not be counted into a
+     * due-today total. Adding it there would make "Nothing due today" false with
+     * nothing on the screen able to explain why.
+     *
+     * So it renders as its own block, and "Nothing due today" and "3 pickups to
+     * re-record" are both allowed to be true at once — which today they are.
+     */
+    needsMe: List<NeedsMe>,
     onRefresh: () -> Unit,
     onOpenCard: (BoardCard) -> Unit,
+    /** Tapping a pickup goes to the Editing tab, where the actions live. */
+    onOpenPickup: (String) -> Unit,
 ) {
     val c = DmnTheme.colors
 
@@ -101,7 +119,24 @@ fun AgendaScreen(
                 contentPadding = 16.dp,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                /*
+                  PINNED ABOVE THE DAY, and rendered whether or not the day has
+                  anything in it — including when it does not, which is the case
+                  this exists for.
+
+                  NO WRITE ACTIONS. Re-recorded, Resolve, Dismiss and Remove all
+                  live on the Editing tab; a second screen that writes pickups is
+                  how one rule becomes two implementations. Tapping goes there.
+                */
+                if (needsMe.isNotEmpty()) {
+                    item(key = "pickups_h") { GroupHeading("To re-record") }
+                    items(count = needsMe.size, key = { needsMe[it].id }) {
+                        PickupRow(needsMe[it], onOpenPickup)
+                    }
+                }
+
                 if (agenda.isEmpty) {
+                    if (needsMe.isNotEmpty()) return@list
                     // A message rather than blank(): an agenda with nothing in it is
                     // a real answer — "nothing is asked of you today" — and rendering
                     // literally nothing would read as a screen that failed to load.
@@ -153,6 +188,50 @@ private fun Stat(label: String, hours: Double) {
             style = DmnType.Numeric,
             color = c.textPrimary,
         )
+    }
+}
+
+/**
+ * One line to re-record.
+ *
+ * THE CORRECTION IS THE LARGEST THING AND IS NEVER TRUNCATED — no maxLines, no
+ * ellipsis. A line you have to open a card to read has not been shown to you,
+ * and reading it is the entire reason the row is here. The timestamp is
+ * monospaced so a column of them scans as times.
+ */
+@Composable
+private fun PickupRow(p: NeedsMe, onOpen: (String) -> Unit) {
+    val c = DmnTheme.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Surface)
+            .clickable { onOpen(p.cardId) }
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                p.bookTitle,
+                style = DmnType.BodyMedium,
+                color = c.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                p.timestampAt,
+                style = DmnType.Small.copy(fontFamily = FontFamily.Monospace),
+                color = c.accentAmber,
+            )
+        }
+        Text("ch ${p.chapter}", style = DmnType.Small, color = c.textMuted)
+        if (p.line.isNotBlank()) {
+            Text(
+                p.line,
+                style = DmnType.Body,
+                color = c.textPrimary,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
     }
 }
 

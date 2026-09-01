@@ -2,6 +2,8 @@ package com.dmnarration.admin.ui.shelf
 
 import com.dmnarration.admin.data.BoardRepository
 import com.dmnarration.admin.domain.CastMember
+import com.dmnarration.admin.domain.EditorAssignment
+import com.dmnarration.admin.domain.NeedsMe
 import com.dmnarration.admin.domain.Payout
 import com.dmnarration.admin.domain.PayoutSummary
 import com.dmnarration.admin.domain.CareerTotals
@@ -79,6 +81,10 @@ class ShelfStalenessTest {
         override suspend fun deleteOwnDraftPickup(id: String): Result<Unit> = Result.success(Unit)
         override suspend fun sendChapterPickups(cardId: String, chapter: String): Result<SendPickupsResult> = Result.success(SendPickupsResult())
     override suspend fun cardCast(cardId: String) = Result.success(emptyList<CastMember>())
+    override suspend fun pickupsNeedingMe() = Result.success(emptyList<NeedsMe>())
+    override suspend fun editorAssignments() = Result.success(emptyList<EditorAssignment>())
+    override suspend fun claimCard(cardId: String) = Result.success(Unit)
+    override suspend fun releaseCard(cardId: String) = Result.success(Unit)
     override suspend fun resolvePickup(id: String, status: PickupStatus) = Result.success(Unit)
     override suspend fun markPickupReturned(id: String) = Result.success(Unit)
     override suspend fun deletePickup(id: String) = Result.success(Unit)

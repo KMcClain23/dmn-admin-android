@@ -9,8 +9,15 @@ import kotlinx.serialization.Serializable
  * One row of pickups_for_editor() / pickups_for_session().
  *
  * Both return the same shape and differ only in their gate, so one DTO decodes
- * both. Every field carries a default: a DTO that throws on a missing key turns
- * a server-side column addition into a client crash, and E5 will add columns.
+ * both. Every field carries a default so that a MISSING key is tolerated — a
+ * column dropped or omitted from one of the two functions.
+ *
+ * DEFAULTS DO NOT PROTECT AGAINST AN ADDED COLUMN, and an earlier version of
+ * this comment claimed they did. They cover an absent key; an EXTRA key is a
+ * different failure and throws, because the client decodes through
+ * KotlinXSerializer()'s default Json with ignoreUnknownKeys = false. A column
+ * added to pickups_for_editor would empty this list on every installed build.
+ * See DecoderExposureTest — a near-miss on board_for_editor is what found this.
  */
 @Serializable
 data class PickupDto(

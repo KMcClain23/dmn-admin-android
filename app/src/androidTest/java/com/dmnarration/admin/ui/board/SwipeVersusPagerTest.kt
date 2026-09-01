@@ -92,6 +92,11 @@ class SwipeVersusPagerTest {
         narratorSharePercent = null,
         recordingDates = emptyList(),
         wordsRecorded = null,
+        // Added when page progress shipped; this fixture was never updated,
+        // which broke the androidTest compile and took every instrumented test
+        // down with it.
+        totalPages = null,
+        currentPage = null,
         createdAt = Instant.parse("2026-01-01T00:00:00Z"),
     )
 

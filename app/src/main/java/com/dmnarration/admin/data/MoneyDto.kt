@@ -131,6 +131,20 @@ fun ExpenseDto.toDomain(): Expense = Expense(
 @Serializable
 data class PayoutDto(
     val id: String,
+    /**
+     * DECLARED BECAUSE THE FUNCTION RETURNS IT, not because anything reads it.
+     *
+     * `payouts_for_session()` has always selected p.card_id and this DTO did not
+     * declare it, so the Payouts screen threw JsonDecodingException on every
+     * load — and not vacuously, since payment_payouts holds nine rows. It went
+     * unnoticed because the failure looks like any other load error.
+     *
+     * Found by auditing every relation the app decodes against its function's
+     * real column list, after a near-miss adding a column to board_for_editor.
+     * ignoreUnknownKeys is false, so declaring a column is not optional
+     * bookkeeping — it is the difference between a screen working and not.
+     */
+    val card_id: String? = null,
     val payment_id: String = "",
     val payee_name: String = "",
     val kind: String = "",

@@ -1,4 +1,4 @@
-package com.dmnarration.admin.ui.detail
+package com.dmnarration.admin.ui.editing
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
