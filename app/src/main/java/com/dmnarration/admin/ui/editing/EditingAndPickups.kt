@@ -92,6 +92,8 @@ private fun field(
 fun EditingSection(
     detail: CardDetail,
     canEdit: Boolean,
+    /** A refusal from the last save, shown right here rather than far below. */
+    error: String? = null,
     onSetProgress: (Int?, Int?) -> Unit,
     onMarkComplete: (Boolean) -> Unit,
 ) {
@@ -140,6 +142,24 @@ fun EditingSection(
         }
 
         // A toggle, not a one-way button: marking complete by mistake must be
+        /*
+          THE REFUSAL, BESIDE THE FIELD THAT CAUSED IT.
+
+          set_editing_progress refuses on a book that tracks chapters
+          individually when the set is not a prefix — 1-6 plus 8 cannot be
+          written as a count without losing that 8 was done. Reported into the
+          pickups area, that message sat below thirteen pickups and was never
+          seen: the number stayed in the box and the save looked like it worked.
+        */
+        error?.let {
+            Text(
+                it,
+                style = DmnType.Small,
+                color = DmnTheme.colors.alertRed,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+
         // undoable, and the column is a nullable timestamp precisely so it can
         // be unset.
         TextButton(onClick = { onMarkComplete(detail.editingState != EditingState.DONE) }) {

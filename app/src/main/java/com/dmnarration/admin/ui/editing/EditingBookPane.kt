@@ -86,6 +86,7 @@ fun EditingBookPane(
             else -> Column(Modifier.verticalScroll(rememberScrollState())) {
                 EditingSection(
                     detail = detail,
+                    error = state.progressError,
                     // An editor may record progress; so may Dean, because the
                     // gate admits admin too. Anyone who can see the book can say
                     // how far through it is.

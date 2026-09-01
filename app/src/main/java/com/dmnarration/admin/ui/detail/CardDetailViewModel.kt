@@ -13,6 +13,7 @@ import com.dmnarration.admin.domain.CastMember
 import com.dmnarration.admin.domain.PickupKind
 import com.dmnarration.admin.domain.PickupStatus
 import com.dmnarration.admin.domain.UserRole
+import com.dmnarration.admin.domain.humanMessage
 import com.dmnarration.admin.domain.WRITE_REFUSED_MESSAGE
 import com.dmnarration.admin.domain.serverRefusalMessage
 import kotlinx.serialization.json.JsonNull
@@ -45,6 +46,15 @@ data class CardDetailUiState(
     val userId: String? = null,
     /** A pickup write that failed. Separate from `error`, which is the card read. */
     val pickupError: String? = null,
+    /**
+     * A refusal from the PROGRESS control specifically.
+     *
+     * Separate from pickupError because it renders somewhere else. Saving a
+     * chapter count used to report into the pickups area, which on a long card
+     * is far below the fold — so a refusal reached the database, was correct,
+     * and was invisible: the number sat in the box looking accepted.
+     */
+    val progressError: String? = null,
     /** Narrators an editor may assign to. Id and name only; no email. */
     val cast: List<CastMember> = emptyList(),
     /** Why the cast is empty, when it is empty for a reason. */
@@ -275,8 +285,25 @@ class CardDetailViewModel @Inject constructor(
     // refusal is surfaced, never swallowed — an action that silently does
     // nothing is the failure this project keeps paying for.
 
-    fun setProgress(edited: Int?, total: Int?) = write {
-        board.setEditingProgress(requireNotNull(loadedId), edited, total)
+    /**
+     * A refusal here MUST be shown beside the field that caused it.
+     *
+     * set_editing_progress now refuses on a card that tracks chapters
+     * individually when the existing set is not a prefix — "1-6 plus 8" cannot
+     * be expressed as a count without destroying the fact that 8 was done. That
+     * refusal names the chapter, and naming it is the whole point.
+     */
+    fun setProgress(edited: Int?, total: Int?) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(progressError = null)
+            board.setEditingProgress(requireNotNull(loadedId), edited, total)
+                .onSuccess { loadedId?.let { load(it, initial = false) } }
+                .onFailure { t ->
+                    _state.value = _state.value.copy(
+                        progressError = humanMessage(t, "That did not go through."),
+                    )
+                }
+        }
     }
 
     fun markComplete(complete: Boolean) = write {
@@ -343,7 +370,7 @@ class CardDetailViewModel @Inject constructor(
                 }
                 .onFailure { t ->
                     _state.value = _state.value.copy(
-                        pickupError = t.message ?: "Sending failed.",
+                        pickupError = humanMessage(t, "Sending failed."),
                     )
                 }
         }
@@ -385,7 +412,7 @@ class CardDetailViewModel @Inject constructor(
                 .onSuccess { loadedId?.let { load(it, initial = false) } }
                 .onFailure { t ->
                     _state.value = _state.value.copy(
-                        pickupError = t.message ?: "That did not go through.",
+                        pickupError = humanMessage(t, "That did not go through."),
                     )
                 }
         }
@@ -406,7 +433,7 @@ class CardDetailViewModel @Inject constructor(
             .onFailure {
                 _state.value = _state.value.copy(
                     cast = emptyList(),
-                    castError = it.message ?: "The cast for this book could not be read.",
+                    castError = humanMessage(it, "The cast for this book could not be read."),
                 )
             }
     }
