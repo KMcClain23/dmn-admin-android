@@ -46,9 +46,18 @@ data class NeedsMe(
         }
 }
 
-/** Who holds which book, from `editor_assignments()`. Absent means unclaimed. */
+/**
+ * The assignment picture for one book, from `editor_assignments()`.
+ *
+ * A ROW EXISTS WHEN A BOOK IS CLAIMED **OR** EDITED OUTSIDE, so editorId and
+ * editorName are both nullable now: a book somebody else is posting has an
+ * assignment fact without having an editor here. A card absent from the result
+ * is unclaimed and claimable.
+ */
 data class EditorAssignment(
     val cardId: String,
-    val editorId: String,
-    val editorName: String,
+    val editorId: String?,
+    val editorName: String?,
+    /** Somebody outside is doing the post — not hers to take. */
+    val editedExternally: Boolean,
 )

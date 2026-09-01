@@ -136,10 +136,15 @@ fun EditingScreen(
                     card = card,
                     holder = state.holderOf(card.id)?.editorName,
                     mine = state.isMine(card.id),
+                    // Somebody outside is posting it. Offering Claim here would
+                    // offer work she cannot do, and the refusal would come from
+                    // a person rather than from the app — the same rule the web
+                    // hub applies, from the same server-side flag.
+                    external = state.isExternal(card.id),
                     // Claiming is the EDITOR's action. Dean assigns from the
                     // web; giving him a Claim button here would let him take a
                     // book from her by tapping the wrong row.
-                    canClaim = state.role == UserRole.EDITOR,
+                    canClaim = state.role == UserRole.EDITOR && !state.isExternal(card.id),
                     onOpen = { onOpenBook(card.id) },
                     onClaim = { onClaim(card.id) },
                     onUnclaim = { onUnclaim(card.id) },
@@ -211,6 +216,7 @@ private fun BookRow(
     card: BoardCard,
     holder: String?,
     mine: Boolean,
+    external: Boolean,
     canClaim: Boolean,
     onOpen: () -> Unit,
     onClaim: () -> Unit,
@@ -242,7 +248,14 @@ private fun BookRow(
                     // WHOSE IT IS, said plainly. "Unclaimed" is a real state and
                     // saying nothing would leave it looking like everybody's.
                     append(" · ")
-                    append(if (mine) "yours" else holder?.let { "with $it" } ?: "unclaimed")
+                    append(
+                        when {
+                            mine -> "yours"
+                            external -> "edited elsewhere"
+                            holder != null -> "with $holder"
+                            else -> "unclaimed"
+                        },
+                    )
                 },
                 style = DmnType.Small,
                 color = c.textMuted,

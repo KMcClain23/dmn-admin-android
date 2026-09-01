@@ -45,16 +45,40 @@ fun NeedsMeDto.toDomain(): NeedsMe = NeedsMe(
     status = PickupStatus.fromStored(status),
 )
 
-/** One row of `editor_assignments()`. Only CLAIMED books appear. */
+/**
+ * One row of `editor_assignments()`.
+ *
+ * ── THIS DTO WENT STALE AND IT WAS NOT CAUGHT ──────────────────────────────
+ *
+ * The function was widened server-side with `edited_externally`, and its
+ * `editor_id` became nullable at the same time — a row now exists for a book
+ * nobody holds but somebody outside is editing. Both changes were made for the
+ * website without checking this file, and BOTH break decoding here:
+ * ignoreUnknownKeys is false, so the extra key throws, and a non-null String
+ * cannot take an explicit null.
+ *
+ * The Editing tab went to "No books are in editing" — a plausible, quiet, and
+ * completely wrong answer. Play holds versionCode 49, which has no Editing tab
+ * and never calls this, so nothing installed was affected; 0.3.0 would have
+ * shipped broken.
+ *
+ * DecoderExposureTest existed and did not catch it, because it pinned
+ * BoardCardDto alone while the audit that motivated it listed fourteen
+ * relations. `npm run check-android-dtos` now checks all of them against the
+ * live column lists.
+ */
 @Serializable
 data class EditorAssignmentDto(
     val card_id: String,
-    val editor_id: String,
-    val editor_name: String = "",
+    /** Null for a book nobody holds that is edited outside. */
+    val editor_id: String? = null,
+    val editor_name: String? = null,
+    val edited_externally: Boolean = false,
 )
 
 fun EditorAssignmentDto.toDomain(): EditorAssignment = EditorAssignment(
     cardId = card_id,
     editorId = editor_id,
     editorName = editor_name,
+    editedExternally = edited_externally,
 )

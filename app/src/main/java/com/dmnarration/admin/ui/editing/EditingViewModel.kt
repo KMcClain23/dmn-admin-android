@@ -49,6 +49,9 @@ data class EditingUiState(
     fun holderOf(cardId: String): EditorAssignment? = assignments.firstOrNull { it.cardId == cardId }
 
     fun isMine(cardId: String): Boolean = myId != null && holderOf(cardId)?.editorId == myId
+
+    /** Somebody outside is editing it, so it is not hers to claim. */
+    fun isExternal(cardId: String): Boolean = holderOf(cardId)?.editedExternally == true
 }
 
 @HiltViewModel
